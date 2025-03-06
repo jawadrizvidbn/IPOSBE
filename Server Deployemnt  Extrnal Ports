@@ -1,0 +1,37 @@
+New server details
+
+IP 154.0.175.68
+User IPOS
+Password Project@2024
+
+MySql credentials 
+
+username root
+Password HOST
+Port No 3306
+
+
+
+=================================================
+C:\Users\IPOS>netstat -an | find "2024"
+  TCP    154.0.175.68:2024      0.0.0.0:0              LISTENING
+
+C:\Users\IPOS>netstat -an | find "2025"
+
+C:\Users\IPOS>sudo netstat -tuln | grep 2024
+'sudo' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\IPOS>sudo netstat -tuln | grep 2025
+'sudo' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\IPOS>netstat -an | find "2025"
+  TCP    154.0.175.68:2025      0.0.0.0:0              LISTENING
+  TCP    154.0.175.68:2025      103.244.179.99:17413   TIME_WAIT
+  TCP    154.0.175.68:2025      103.244.179.99:17430   TIME_WAIT
+  TCP    154.0.175.68:2025      103.244.179.99:17431   FIN_WAIT_2
+  TCP    154.0.175.68:2025      103.244.179.99:17447   TIME_WAIT
+  TCP    154.0.175.68:2025      103.244.179.99:17450   FIN_WAIT_2
+
+C:\Users\IPOS>sudo netstat -tuln | grep 2024
