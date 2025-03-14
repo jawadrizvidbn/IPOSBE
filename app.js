@@ -12,7 +12,7 @@ const User = require('./models/user.model'); // Import the User model
 const app = express();
 app.use(cors());
 const Port = config.server.Port;
-const DynamiclyIpAdress ="154.0.173.220" 
+const DynamiclyIpAdress ="165.73.85.11" 
 app.use(bodyParser.json());
 
 // Use the routes
