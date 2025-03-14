@@ -3,9 +3,9 @@
 module.exports = {
     mysql: {
       username: 'root',
-      password: 'HOST',
+      password: 'New@Lambert',
       // host: '197.242.148.70',
-      host: '154.0.173.220',
+      host: '165.73.85.11',
       database: '' // Optionally, you can set the database name here
     },
     server: {

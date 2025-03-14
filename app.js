@@ -13,7 +13,7 @@ const app = express();
 app.use(cors());
 const Port = config.server.Port;
 const DynamiclyIpAdress =
-  process.env?.APP_ENV === "local" ? "localhost" : "154.0.173.220";
+  process.env?.APP_ENV === "local" ? "localhost" : "165.73.85.11";
 app.use(bodyParser.json());
 
 // Use the routes
