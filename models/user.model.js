@@ -81,7 +81,7 @@ const User = sequelize.define('User', {
       try {
         // Attempt to create the 'ipospermissions' database
         await sequelize.query(`CREATE DATABASE IF NOT EXISTS ipospermissions`);
-        console.log("Database 'ipospermissions' created successfully. Retrying synchronization...");
+        console.log("Database '' created successfully. Retrying synchronization...");
 
         // Retry synchronization after creating 'ipospermissions' database
         await User.sync();

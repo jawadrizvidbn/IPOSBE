@@ -1,29 +1,32 @@
 // app.js
 
-const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const bcrypt = require('bcrypt'); // Import bcrypt for password hashing
-const config = require('./config/config');
-const databaseRoutes = require('./routes/databaseRoutes');
-const userRoutes = require('./routes/userRoutes');
-const User = require('./models/user.model'); // Import the User model
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const bcrypt = require("bcrypt"); // Import bcrypt for password hashing
+const config = require("./config/config");
+const databaseRoutes = require("./routes/databaseRoutes");
+const userRoutes = require("./routes/userRoutes");
+const User = require("./models/user.model"); // Import the User model
 
 const app = express();
 app.use(cors());
 const Port = config.server.Port;
-const DynamiclyIpAdress ="154.0.173.220" 
+const DynamiclyIpAdress =
+  process.env?.APP_ENV === "local" ? "localhost" : "154.0.173.220";
 app.use(bodyParser.json());
 
 // Use the routes
-app.use('/api/database', databaseRoutes);
+app.use("/api/database", databaseRoutes);
 
-app.use('/api/auth', userRoutes);
+app.use("/api/auth", userRoutes);
 
 // Function to create admin user if not exists
 const createAdminUserIfNotExists = async () => {
   try {
-    const adminUser = await User.findOne({ where: { email: "admin@gmail.com" } });
+    const adminUser = await User.findOne({
+      where: { email: "admin@gmail.com" },
+    });
 
     if (!adminUser) {
       // Hash the password before storing it in the database
@@ -32,8 +35,8 @@ const createAdminUserIfNotExists = async () => {
       // Create admin user
       const createdAdmin = await User.create({
         email: "admin@gmail.com",
-        image: '/images/avatars/1.png',
-        name: 'John Doe',
+        image: "/images/avatars/1.png",
+        name: "John Doe",
         password: hashedPassword, // You should hash the password in a real-world scenario
         role: "superadmin",
         // permissions: ["updateUser", "deleteUser", "viewUsers"],
@@ -49,11 +52,9 @@ const createAdminUserIfNotExists = async () => {
 };
 
 // Start the server and create admin user on startup
-app.listen(Port,
-  DynamiclyIpAdress,
-   async () => {
-  console.log(`Server running at ${config.mysql.host}:${Port}/`);
+app.listen(Port, DynamiclyIpAdress, async () => {
+  console.log(`Server running at ${DynamiclyIpAdress}:${Port}`);
 
   // Ensure admin user is created on server startup
-  await createAdminUserIfNotExists();
+  // await createAdminUserIfNotExists();
 });
