@@ -7,6 +7,7 @@ const sequelize = require("../models/databaseModel");
 const createSequelizeInstance = require("../utils/sequelizeInstance");
 
 const LZString = require("lz-string");
+const { serialize } = require("cookie");
 
 // Define default report permissions
 const reportPermissions = {
@@ -178,6 +179,7 @@ exports.login = async (req, res) => {
       console.log("Superadmin login - skipping plan validation");
       // Generate token and respond for superadmin
       const token = generateToken(user.id, { userPermissions: [] }); // Adjust permissions if needed
+
       return res.status(200).json({
         user: {
           id: user.id,
@@ -262,11 +264,9 @@ exports.getAllUsers = async (req, res) => {
   try {
     // Check if the request has a superadmin flag set by the middleware
     if (!req.superadmin) {
-      return res
-        .status(403)
-        .json({
-          message: "Access denied. Only superadmins can grant permissions.",
-        });
+      return res.status(403).json({
+        message: "Access denied. Only superadmins can grant permissions.",
+      });
     }
     const users = await User.findAll();
 
@@ -306,11 +306,9 @@ exports.getAllUsers = async (req, res) => {
 exports.renewPlan = async (req, res) => {
   try {
     if (!req.superadmin) {
-      return res
-        .status(403)
-        .json({
-          message: "Access denied. Only superadmins can grant permissions.",
-        });
+      return res.status(403).json({
+        message: "Access denied. Only superadmins can grant permissions.",
+      });
     }
     const { userId, newPlan, newPlanEndDate } = req.body;
 
@@ -390,32 +388,26 @@ exports.addShopAccess = async (req, res) => {
   try {
     // Check if the request has a superadmin flag set by the middleware
     if (!req.superadmin) {
-      return res
-        .status(403)
-        .json({
-          message: "Access denied. Only superadmins can grant permissions.",
-        });
+      return res.status(403).json({
+        message: "Access denied. Only superadmins can grant permissions.",
+      });
     }
     const { userId } = req.params;
     const { shopAccess } = req.body;
 
     // Validate if shopAccess array is provided
     if (!Array.isArray(shopAccess) || shopAccess.length === 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Shop access array is required and should not be empty",
-        });
+      return res.status(400).json({
+        message: "Shop access array is required and should not be empty",
+      });
     }
 
     // Validate the format of each shop access object
     for (const access of shopAccess) {
       if (!access.group || !access.shopName) {
-        return res
-          .status(400)
-          .json({
-            message: "Each shop access must contain a group and a shopName",
-          });
+        return res.status(400).json({
+          message: "Each shop access must contain a group and a shopName",
+        });
       }
     }
 
@@ -534,11 +526,9 @@ exports.removeShopAccess = async (req, res) => {
   try {
     // Check if the request has a superadmin flag set by the middleware
     if (!req.superadmin) {
-      return res
-        .status(403)
-        .json({
-          message: "Access denied. Only superadmins can remove permissions.",
-        });
+      return res.status(403).json({
+        message: "Access denied. Only superadmins can remove permissions.",
+      });
     }
 
     const { userId } = req.params;
@@ -546,21 +536,17 @@ exports.removeShopAccess = async (req, res) => {
 
     // Validate if shopAccess array is provided
     if (!Array.isArray(shopAccess) || shopAccess.length === 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Shop access array is required and should not be empty",
-        });
+      return res.status(400).json({
+        message: "Shop access array is required and should not be empty",
+      });
     }
 
     // Validate the format of each shop access object
     for (const access of shopAccess) {
       if (!access.group || !access.shopName) {
-        return res
-          .status(400)
-          .json({
-            message: "Each shop access must contain a group and a shopName",
-          });
+        return res.status(400).json({
+          message: "Each shop access must contain a group and a shopName",
+        });
       }
     }
 
@@ -633,42 +619,34 @@ exports.removeShopAccess = async (req, res) => {
 exports.grantGroupPermissions = async (req, res) => {
   try {
     if (!req.superadmin) {
-      return res
-        .status(403)
-        .json({
-          message: "Access denied. Only superadmins can grant permissions.",
-        });
+      return res.status(403).json({
+        message: "Access denied. Only superadmins can grant permissions.",
+      });
     }
 
     const { userId } = req.params;
     const { permissions } = req.body;
 
     if (!Array.isArray(permissions) || permissions.length === 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Permissions array is required and should not be empty",
-        });
+      return res.status(400).json({
+        message: "Permissions array is required and should not be empty",
+      });
     }
 
     // Validate permissions
     for (const perm of permissions) {
       if (!perm.group || !perm.shopName) {
-        return res
-          .status(400)
-          .json({
-            message: "Each permission must contain a group and a shopName",
-          });
+        return res.status(400).json({
+          message: "Each permission must contain a group and a shopName",
+        });
       }
       if (
         perm.staticReportPermissions &&
         typeof perm.staticReportPermissions !== "object"
       ) {
-        return res
-          .status(400)
-          .json({
-            message: "Static report permissions must be an object if provided",
-          });
+        return res.status(400).json({
+          message: "Static report permissions must be an object if provided",
+        });
       }
     }
 
@@ -900,11 +878,9 @@ exports.getUserGroupsAndShops = async (req, res) => {
 
   try {
     if (!req.superadmin) {
-      return res
-        .status(403)
-        .json({
-          message: "Access denied. Only superadmins can remove permissions.",
-        });
+      return res.status(403).json({
+        message: "Access denied. Only superadmins can remove permissions.",
+      });
     }
     const user = await User.findByPk(userId);
 

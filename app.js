@@ -7,10 +7,32 @@ const bcrypt = require("bcrypt"); // Import bcrypt for password hashing
 const config = require("./config/config");
 const databaseRoutes = require("./routes/databaseRoutes");
 const userRoutes = require("./routes/userRoutes");
+const planRoutes = require("./routes/planRoutes");
 const User = require("./models/user.model"); // Import the User model
+const cookieParser = require("cookie-parser");
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = [
+  "http://localhost:3000", // Local React app
+  "http://165.73.85.11:2025/",
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true); // ✅ Allow request
+      } else {
+        callback(new Error("Not allowed by CORS")); // ❌ Reject request
+      }
+    },
+    credentials: true, // Allow cookies
+    methods: ["GET", "POST", "PUT", "DELETE"], // Allow necessary methods
+    allowedHeaders: ["Content-Type", "Authorization"], // Allow headers
+  })
+);
+app.use(cookieParser());
 const Port = config.server.Port;
 const DynamiclyIpAdress =
   process.env?.APP_ENV === "local" ? "localhost" : "165.73.85.11";
@@ -18,7 +40,7 @@ app.use(bodyParser.json());
 
 // Use the routes
 app.use("/api/database", databaseRoutes);
-
+app.use("/api/plan", planRoutes);
 app.use("/api/auth", userRoutes);
 
 // Function to create admin user if not exists
