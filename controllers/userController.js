@@ -268,7 +268,13 @@ exports.getAllUsers = async (req, res) => {
         message: "Access denied. Only superadmins can grant permissions.",
       });
     }
-    const users = await User.findAll();
+    const users = await User.findAll({
+      include: [
+        {
+          model: "Plan",
+        },
+      ],
+    });
 
     if (!users || users.length === 0) {
       return res.status(404).json({ message: "No users found" });
@@ -284,12 +290,13 @@ exports.getAllUsers = async (req, res) => {
         console.error(`Error parsing permissions for user ${user.id}:`, error);
       }
 
+      const planDetails = user.Plan || null;
       return {
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
-        plan: user.plan,
+        plan: planDetails || user?.plan,
         planActive: user.planActive,
         planStartDate: user.planStartDate,
         planEndDate: user.planEndDate,
@@ -303,6 +310,7 @@ exports.getAllUsers = async (req, res) => {
     res.status(500).json({ message: "Failed to retrieve users" });
   }
 };
+
 exports.renewPlan = async (req, res) => {
   try {
     if (!req.superadmin) {
@@ -522,6 +530,7 @@ exports.addShopAccess = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.removeShopAccess = async (req, res) => {
   try {
     // Check if the request has a superadmin flag set by the middleware

@@ -33,10 +33,11 @@ app.use(
   })
 );
 app.use(cookieParser());
+app.use(bodyParser.json());
+
 const Port = config.server.Port;
 const DynamiclyIpAdress =
   process.env?.APP_ENV === "local" ? "localhost" : "165.73.85.11";
-app.use(bodyParser.json());
 
 // Use the routes
 app.use("/api/database", databaseRoutes);

@@ -5,6 +5,8 @@ const router = express.Router();
 const databaseController = require('../controllers/databaseController');
 const reportController = require('../controllers/reportController');
 const checkSuperadmin = require("../middleware/superadminMiddleware")
+
+router.post('/connect-new-server', databaseController.connectServerAndGetAllDatabases)
 router.get('/getalldatabases', databaseController.getalldatabases);
 router.get('/getallshoptable', databaseController.getallshoptable);
 router.get('/getallshop', checkSuperadmin, databaseController.getallshop);
