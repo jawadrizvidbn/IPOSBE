@@ -14,7 +14,7 @@ router.post('/renewPlan', checkSuperadmin,userController.renewPlan);
 
 
 // Route to get all users with parsed permissions (requires superadmin access)
-router.get('/users', checkSuperadmin,userController.getAllUsers);
+router.get('/users',userController.getAllUsers);
 // Route to grant group permissions (requires superadmin access)
 router.put('/users/:userId/groups', checkSuperadmin, userController.grantGroupPermissions);
 router.post('/users/:userId/shop-access', checkSuperadmin, userController.addShopAccess);

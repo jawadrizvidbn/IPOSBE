@@ -8,6 +8,10 @@ const createSequelizeInstance = require("../utils/sequelizeInstance");
 
 const LZString = require("lz-string");
 const { serialize } = require("cookie");
+const Plan = require("../models/plan.model");
+
+User.belongsTo(Plan, { foreignKey: "plan" });
+Plan.hasOne(User, { foreignKey: "plan" });
 
 // Define default report permissions
 const reportPermissions = {
@@ -263,15 +267,15 @@ exports.login = async (req, res) => {
 exports.getAllUsers = async (req, res) => {
   try {
     // Check if the request has a superadmin flag set by the middleware
-    if (!req.superadmin) {
-      return res.status(403).json({
-        message: "Access denied. Only superadmins can grant permissions.",
-      });
-    }
+    // if (!req.superadmin) {
+    //   return res.status(403).json({
+    //     message: "Access denied. Only superadmins can grant permissions.",
+    //   });
+    // }
     const users = await User.findAll({
       include: [
         {
-          model: "Plan",
+          model: Plan,
         },
       ],
     });

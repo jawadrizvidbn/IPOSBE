@@ -1,13 +1,13 @@
 // user.model.js
 
-const { Sequelize, DataTypes } = require('sequelize');
-const createSequelizeInstance = require('../utils/sequelizeInstance'); // Import the function to create Sequelize instances
+const { Sequelize, DataTypes } = require("sequelize");
+const createSequelizeInstance = require("../utils/sequelizeInstance"); // Import the function to create Sequelize instances
 
 // Create Sequelize instance for 'ipospermissions' database dynamically
-const sequelize = createSequelizeInstance('ipospermissions');
+const sequelize = createSequelizeInstance("ipospermissions");
 
 // Define the User model
-const User = sequelize.define('User', {
+const User = sequelize.define("User", {
   name: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -22,7 +22,7 @@ const User = sequelize.define('User', {
   },
   role: {
     type: DataTypes.STRING,
-    defaultValue: 'user',
+    defaultValue: "user",
   },
   permissions: {
     type: DataTypes.TEXT, // Store permissions as JSON
@@ -30,7 +30,7 @@ const User = sequelize.define('User', {
   plan: {
     type: Sequelize.STRING,
     allowNull: false,
-    defaultValue: 'defaultPlan' // Set your default plan here
+    defaultValue: "defaultPlan", // Set your default plan here
   },
   planActive: {
     type: DataTypes.BOOLEAN,
@@ -42,24 +42,29 @@ const User = sequelize.define('User', {
   planEndDate: {
     type: DataTypes.DATE,
   },
+  gracePeriod: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+  },
   // Store login history as a string and parse it
   loginHistory: {
     type: DataTypes.TEXT, // Store login history as a JSON string
     get() {
-      const value = this.getDataValue('loginHistory');
+      const value = this.getDataValue("loginHistory");
       return value ? JSON.parse(value) : []; // Parse JSON string on retrieval
     },
     set(value) {
-      this.setDataValue('loginHistory', JSON.stringify(value)); // Store as JSON string
+      this.setDataValue("loginHistory", JSON.stringify(value)); // Store as JSON string
     },
-  },planHistory: {
+  },
+  planHistory: {
     type: DataTypes.TEXT, // Store as JSON
     get() {
-      const value = this.getDataValue('planHistory');
+      const value = this.getDataValue("planHistory");
       return value ? JSON.parse(value) : []; // Parse JSON string on retrieval
     },
     set(value) {
-      this.setDataValue('planHistory', JSON.stringify(value)); // Store as JSON string
+      this.setDataValue("planHistory", JSON.stringify(value)); // Store as JSON string
     },
   },
 });
@@ -73,21 +78,32 @@ const User = sequelize.define('User', {
   } catch (error) {
     // If database 'ipospermissions' doesn't exist, log an error
     console.error("Error synchronizing user table:", error);
-    
+
     // Check if the error is related to 'Unknown database', attempt to create 'ipospermissions'
-    if (error.name === 'SequelizeConnectionError' && error.parent && error.parent.code === 'ER_BAD_DB_ERROR') {
+    if (
+      error.name === "SequelizeConnectionError" &&
+      error.parent &&
+      error.parent.code === "ER_BAD_DB_ERROR"
+    ) {
       console.log("Attempting to create database 'ipospermissions'...");
-      
+
       try {
         // Attempt to create the 'ipospermissions' database
         await sequelize.query(`CREATE DATABASE IF NOT EXISTS ipospermissions`);
-        console.log("Database '' created successfully. Retrying synchronization...");
+        console.log(
+          "Database '' created successfully. Retrying synchronization..."
+        );
 
         // Retry synchronization after creating 'ipospermissions' database
         await User.sync();
-        console.log("User table synchronized successfully after creating 'ipospermissions'.");
+        console.log(
+          "User table synchronized successfully after creating 'ipospermissions'."
+        );
       } catch (createError) {
-        console.error("Failed to create 'ipospermissions' database:", createError);
+        console.error(
+          "Failed to create 'ipospermissions' database:",
+          createError
+        );
       }
     }
   }

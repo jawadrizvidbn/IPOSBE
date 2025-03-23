@@ -8,6 +8,7 @@ const config = require("./config/config");
 const databaseRoutes = require("./routes/databaseRoutes");
 const userRoutes = require("./routes/userRoutes");
 const planRoutes = require("./routes/planRoutes");
+const permissionRoutes = require("./routes/permissionRoute");
 const User = require("./models/user.model"); // Import the User model
 const cookieParser = require("cookie-parser");
 
@@ -43,6 +44,7 @@ const DynamiclyIpAdress =
 app.use("/api/database", databaseRoutes);
 app.use("/api/plan", planRoutes);
 app.use("/api/auth", userRoutes);
+app.use("/api/permission", permissionRoutes);
 
 // Function to create admin user if not exists
 const createAdminUserIfNotExists = async () => {
