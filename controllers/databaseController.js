@@ -19,7 +19,7 @@ const connectServerAndGetAllDatabases = async (req, res) => {
     );
   } catch (err) {
     console.error("Error fetching databases:", err);
-    throw new Error("Failed to fetch databases");
+    res.status(500).send("Error fetching databases");
   }
 };
 

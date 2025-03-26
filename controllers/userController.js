@@ -158,6 +158,50 @@ exports.register = async (req, res) => {
   }
 };
 
+exports.create = async (req, res) => {
+  try {
+    const {
+      name,
+      password,
+      email,
+      role,
+      permissions = [],
+      plan = "defaultPlan", // Default plan if not provided
+      planActive = false, // Default plan active status
+      planStartDate = null, // Default start date
+      planEndDate = null, // Default end date
+    } = req.body;
+
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Combine provided permissions
+    const combinedPermissions = {
+      userPermissions: permissions,
+    };
+
+    // Create the new user
+    const newUser = await User.create({
+      name,
+      email,
+      role,
+      permissions: JSON.stringify(combinedPermissions),
+      password: hashedPassword,
+      plan,
+      planActive,
+      planStartDate,
+      planEndDate,
+    });
+
+    // Generate a token for the new user
+    const token = generateToken(newUser.id, combinedPermissions); // Include combined permissions in token
+    // Respond with the new user and token
+    res.status(201).json({ user: newUser, token });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
