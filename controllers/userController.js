@@ -162,45 +162,44 @@ exports.create = async (req, res) => {
   try {
     const {
       name,
-      password,
       email,
-      role,
+      password,
+      serverHost,
+      serverPassword,
+      serverUser,
+      allowedStores = [],
       permissions = [],
-      plan = "defaultPlan", // Default plan if not provided
-      planActive = false, // Default plan active status
-      planStartDate = null, // Default start date
-      planEndDate = null, // Default end date
+      plan,
+      planStartDate, // Default start date
+      planEndDate, // Default end date
+      gracePeriod = 0,
     } = req.body;
 
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Combine provided permissions
-    const combinedPermissions = {
-      userPermissions: permissions,
-    };
-
     // Create the new user
     const newUser = await User.create({
       name,
       email,
-      role,
-      permissions: JSON.stringify(combinedPermissions),
       password: hashedPassword,
+      serverHost,
+      serverPassword,
+      serverUser,
+      allowedStores: JSON.stringify(allowedStores),
+      permissions: JSON.stringify(permissions),
       plan,
-      planActive,
       planStartDate,
       planEndDate,
+      gracePeriod,
     });
 
-    // Generate a token for the new user
-    const token = generateToken(newUser.id, combinedPermissions); // Include combined permissions in token
     // Respond with the new user and token
-    res.status(201).json({ user: newUser, token });
+    res.status(201).json({ user: newUser });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-}
+};
 
 exports.login = async (req, res) => {
   try {
@@ -329,15 +328,7 @@ exports.getAllUsers = async (req, res) => {
     }
 
     // Parse permissions for each user
-    const usersWithParsedPermissions = users.map((user) => {
-      let parsedPermissions = {};
-      try {
-        parsedPermissions = JSON.parse(user.permissions); // Attempt to parse permissions
-      } catch (error) {
-        // Handle JSON parsing error (e.g., if permissions field is empty or invalid JSON)
-        console.error(`Error parsing permissions for user ${user.id}:`, error);
-      }
-
+    const data = users.map((user) => {
       const planDetails = user.Plan || null;
       return {
         id: user.id,
@@ -348,14 +339,110 @@ exports.getAllUsers = async (req, res) => {
         planActive: user.planActive,
         planStartDate: user.planStartDate,
         planEndDate: user.planEndDate,
-        permissions: parsedPermissions, // Use parsedPermissions or default to an empty object
+        permissions: JSON.parse(user.permissions), // Use parsedPermissions or default to an empty object
       };
     });
 
-    res.status(200).json(usersWithParsedPermissions);
+    res.status(200).json(data);
   } catch (error) {
     console.error("Error fetching users:", error);
     res.status(500).json({ message: "Failed to retrieve users" });
+  }
+};
+
+exports.getUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const planDetails = user.Plan || null;
+    res.status(200).json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      plan: planDetails || user?.plan,
+      planActive: user.planActive,
+      planStartDate: user.planStartDate,
+      planEndDate: user.planEndDate,
+      permissions: JSON.parse(user.permissions),
+      gracePeriod: user.gracePeriod,
+      serverHost: user.serverHost,
+      serverUser: user.serverUser,
+      serverPassword: user.serverPassword,
+      allowedStores: JSON.parse(user.allowedStores),
+    });
+  } catch (error) {
+    console.error("Error fetching user by ID:", error);
+    res.status(500).json({ message: "Failed to retrieve user" });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const {
+      name,
+      email,
+      role,
+      permissions,
+      plan,
+      planActive,
+      planStartDate,
+      planEndDate,
+      gracePeriod,
+      serverHost,
+      serverUser,
+      serverPassword,
+      allowedStores,
+      password,
+    } = req.body;
+
+    if (password) {
+      user.password = await bcrypt.hash(password, 10);
+    }
+
+    console.log("permissions: ", typeof permissions);
+    console.log("allowedStores", typeof allowedStores);
+    user.name = name;
+    user.email = email;
+    user.role = role;
+    user.permissions = JSON.stringify(permissions);
+    user.plan = plan;
+    user.planActive = planActive;
+    user.planStartDate = planStartDate;
+    user.planEndDate = planEndDate;
+    user.gracePeriod = gracePeriod;
+    user.serverHost = serverHost;
+    user.serverUser = serverUser;
+    user.serverPassword = serverPassword;
+    user.allowedStores = JSON.stringify(allowedStores);
+    await user.save();
+    res.status(200).json({ message: "User updated successfully" });
+  } catch (error) {
+    console.error("Error updating user:", error);
+    res.status(500).json({ message: "Failed to update user" });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    await user.destroy();
+    res.status(200).json({ message: "User deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ message: "Failed to delete user" });
   }
 };
 
