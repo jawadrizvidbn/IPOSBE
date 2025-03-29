@@ -392,8 +392,9 @@ exports.getMultipleDepartmentsSalesReports = getMultipleDepartmentsSalesReports;
 
 exports.findAllTblDataCurrentTranNames = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(req.user);
     
+    console.log(activeDatabases);
 
     // Extract the specific databases needed
     let historyDbName, stockmasterDbName;
@@ -405,6 +406,7 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
+          console.log(dbName)
           if (dbName.endsWith('history')) {
             historyDbName = dbName;
           } else if (dbName.endsWith('stockmaster') || dbName.endsWith('master')) {
@@ -1616,7 +1618,7 @@ exports.HistoryProductSaleByInvoiceReport = async (req, res) => {
 };
 exports.DailySalesReport = async (req, res,tableName) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(req.user);
     
 
     // Extract the specific databases needed

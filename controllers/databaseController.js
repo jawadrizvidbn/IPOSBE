@@ -86,11 +86,20 @@ const getallshoptable = async (req, res) => {
 const getallshop = async (req, res) => {
   try {
     // Fetch all databases
-    const results = await sequelize.query("SHOW DATABASES", {
+    console.log("req.user: ", req.user);
+
+    const { serverHost, serverUser, serverPassword, allowedStores } = req.user;
+
+    const userInstance = new Sequelize("", serverUser, serverPassword, {
+      host: serverHost,
+      dialect: "mysql",
+    });
+    const results = await userInstance.query("SHOW DATABASES", {
       type: QueryTypes.SELECT,
     });
-    const databases = results.map((row) => row.Database || row.database);
-
+    const databases = results
+      .map((row) => row.Database || row.database)
+      .filter((r) => allowedStores.includes(r.toLowerCase()));
     // Regular expression for identifying system or irrelevant databases
     const excludePattern =
       /^(information_schema|mysql|performance_schema|test|sys)$/i;
@@ -154,50 +163,7 @@ const getallshop = async (req, res) => {
     res.status(500).json({ error: "Error fetching databases" });
   }
 };
-// const getallshop = async (req, res) => {
-//   try {
-//     const results = await sequelize.query('SHOW DATABASES', { type: QueryTypes.SELECT });
-//     const databases = results.map(row => row.Database || row.database);
 
-//     const groupedDatabases = databases.reduce((acc, dbName) => {
-//       if (!dbName) return acc;
-//       const baseName = dbName.replace(/(debtors|history|host|master|stockmaster)$/i, '');
-
-//       if (!acc[baseName]) {
-//         acc[baseName] = [];
-//       }
-
-//       acc[baseName].push(dbName);
-//       return acc;
-//     }, {});
-//     // If the user is a superadmin, skip the permission check
-//     if (req.superadmin) {
-//       res.json(groupedDatabases);
-//       return;
-//     }
-
-//     // Extract user permissions from the request object
-//     const permissions = req.userPermissions; // This should be set in the middleware
-
-//     // Initialize an empty object to store the final result
-//     const filteredGroupedDatabases = {};
-
-//     // Iterate over each group in groupedDatabases
-//     Object.keys(groupedDatabases).forEach(group => {
-//       // Find permissions for the current group
-//       const groupPermission = permissions.find(permission => permission.group === group);
-//       if (groupPermission) {
-//         // Use shopName as key in filteredGroupedDatabases
-//         filteredGroupedDatabases[groupPermission.shopName] = groupedDatabases[group];
-//       }
-//     });
-
-//     res.json(filteredGroupedDatabases);
-//   } catch (err) {
-//     console.error('Error fetching databases:', err);
-//     res.status(500).send('Error fetching databases');
-//   }
-// };
 const getTablesFromGroup = async (req, res) => {
   const baseName = req.params.basename;
 
@@ -297,39 +263,25 @@ const insertTableData = async (req, res) => {
 let activeDatabases = {};
 const findAllAndActiveDatabase = async (req, res) => {
   const baseName = req.params.baseName; // Ensure parameter name matches exactly
+  console.log(req.user);
+
+  const { serverHost, serverUser, serverPassword, allowedStores } = req.user;
 
   try {
     // Determine the group to activate databases based on user permissions or superadmin status
-    const userPermissions = Array.isArray(req.userPermissions)
-      ? req.userPermissions
-      : [];
-    const isSuperAdmin = req.superadmin; // Assuming isSuperAdmin is provided in the request
-    let groupToActivate = "";
 
-    if (isSuperAdmin) {
-      // Superadmin can access any group directly
-      groupToActivate = baseName;
-    } else if (userPermissions.length > 0) {
-      // Find the group corresponding to the shopName in userPermissions
-      const permission = userPermissions.find(
-        (perm) =>
-          perm.shopName.trim().toLowerCase() === baseName.trim().toLowerCase()
-      );
-      if (permission) {
-        groupToActivate = permission.group;
-      } else {
-        console.log(`User does not have permission for '${baseName}'.`);
-        return res.status(403).send("Permission denied");
-      }
-    } else {
-      console.log("User role and permissions are not properly provided.");
-      return res.status(403).send("Permission denied");
-    }
+    let groupToActivate = "";
+    const userInstance = new Sequelize("", serverUser, serverPassword, {
+      host: serverHost,
+      dialect: "mysql",
+    });
     // Fetch all databases
-    const results = await sequelize.query("SHOW DATABASES", {
+    const results = await userInstance.query("SHOW DATABASES", {
       type: QueryTypes.SELECT,
     });
-    const databases = results.map((row) => row.Database || row.database);
+    const databases = results
+      .map((row) => row.Database || row.database)
+      .filter((r) => allowedStores.includes(r.toLowerCase()));
 
     // Group databases based on baseName (similar to your controller logic)
     const groupedDatabases = databases.reduce((acc, dbName) => {
@@ -343,8 +295,9 @@ const findAllAndActiveDatabase = async (req, res) => {
       return acc;
     }, {});
 
+    console.log(groupedDatabases, "groupedDatabases");
     // Check if the requested group exists in groupedDatabases
-    if (!groupedDatabases[groupToActivate]) {
+    if (!groupedDatabases[baseName]) {
       console.log(`Requested baseName '${baseName}' not found.`);
       return res.status(404).send("Group not found");
     }
@@ -356,14 +309,17 @@ const findAllAndActiveDatabase = async (req, res) => {
     }
 
     // Select databases from the requested group
-    const dbNames = groupedDatabases[groupToActivate];
+    const dbNames = groupedDatabases[baseName];
     // Store selected databases globally in activeDatabases
     activeDatabases[baseName] = dbNames;
 
     // Perform operations using Sequelize instances for selected databases
     const promises = dbNames.map(async (dbName) => {
       try {
-        const dbInstance = createSequelizeInstance(dbName);
+        const dbInstance = new Sequelize(dbName, serverUser, serverPassword, {
+          host: serverHost,
+          dialect: "mysql",
+        });
         // Example: Fetch tables from each database
         const tableResults = await dbInstance.query(
           `SHOW TABLES FROM \`${dbName}\``,
@@ -387,8 +343,31 @@ const findAllAndActiveDatabase = async (req, res) => {
   }
 };
 // Function to get active databases
-const getActiveDatabases = () => {
-  return activeDatabases;
+const getActiveDatabases = async (user) => {
+  const { serverHost, serverUser, serverPassword, allowedStores } = user || {};
+
+  const userInstance = new Sequelize("", serverUser, serverPassword, {
+    host: serverHost,
+    dialect: "mysql",
+  });
+  const results = await userInstance.query("SHOW DATABASES", {
+    type: QueryTypes.SELECT,
+  });
+  const databases = results
+    .map((row) => row.Database || row.database)
+    .filter((r) => allowedStores.includes(r.toLowerCase()));
+  const groupedDatabases = databases.reduce((acc, dbName) => {
+    if (!dbName) return acc;
+    const name = dbName.replace(
+      /(debtors|history|host|master|stockmaster)$/i,
+      ""
+    );
+    if (!acc[name]) acc[name] = [];
+    acc[name].push(dbName);
+    return acc;
+  }, {});
+
+  return groupedDatabases;
 };
 // In-memory store for selected databases
 let activeDatabasesMultiple = {};

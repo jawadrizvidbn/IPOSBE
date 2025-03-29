@@ -100,3 +100,5 @@ typings/
 # Webstorm
 .idea/
 *.im
+
+.env*

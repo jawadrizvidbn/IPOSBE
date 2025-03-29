@@ -96,22 +96,10 @@ const reportPermissions = {
 };
 
 // Generate JWT token with compressed permissions
-const generateToken = (userId, permissions) => {
-  // Combine user permissions with static report permissions
-  const combinedPermissions = {
-    userPermissions: permissions.userPermissions || [],
-    staticReportPermissions: reportPermissions,
-  };
+const generateToken = (user) => {
+  console.log(user, process.env.JWT_SECRET);
 
-  // Compress the combined permissions data
-  const compressedPermissions = LZString.compressToBase64(
-    JSON.stringify(combinedPermissions)
-  );
-  return jwt.sign(
-    { id: userId, permissions: compressedPermissions },
-    "your-secret-key",
-    { expiresIn: "24h" }
-  );
+  return jwt.sign(user, process.env.JWT_SECRET, { expiresIn: "24h" });
 };
 
 exports.register = async (req, res) => {
@@ -221,84 +209,39 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    const userPayload = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions: JSON.parse(user.permissions),
+      gracePeriod: user.gracePeriod,
+      allowedStores: JSON.parse(user.allowedStores),
+      serverHost: user.serverHost,
+      serverPassword: user.serverPassword,
+      serverUser: user.serverUser,
+      plan: user.plan,
+      planStartDate: user.planStartDate,
+      planEndDate: user.planEndDate,
+    };
     // Check if the user is superadmin
     if (user.role === "superadmin") {
       console.log("Superadmin login - skipping plan validation");
       // Generate token and respond for superadmin
-      const token = generateToken(user.id, { userPermissions: [] }); // Adjust permissions if needed
+      const token = generateToken(userPayload); // Adjust permissions if needed
 
       return res.status(200).json({
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          permissions: [], // Or set relevant superadmin permissions
-        },
+        user: userPayload,
         token,
       });
     }
 
-    // Check plan validity for other roles
-    const currentDate = new Date();
-    const isPlanActive =
-      user.planActive &&
-      user.planStartDate <= currentDate &&
-      (!user.planEndDate || user.planEndDate >= currentDate);
-
-    if (!isPlanActive) {
-      return res
-        .status(403)
-        .json({ message: "Your plan is inactive or has expired" });
-    }
-
-    // Initialize combined permissions
-    let combinedPermissions = {
-      userPermissions: [],
-      staticReportPermissions: reportPermissions,
-    };
-
-    // Parse user.permissions if it exists
-    if (user.permissions) {
-      try {
-        combinedPermissions = JSON.parse(user.permissions);
-      } catch (error) {
-        console.error("Error parsing user permissions:", error);
-      }
-    }
-
-    // Filter tables with access: true
-    const filteredPermissions = combinedPermissions.userPermissions.map(
-      (permission) => {
-        let filteredTables = [];
-
-        if (permission.tables && Array.isArray(permission.tables)) {
-          filteredTables = permission.tables.map((table) => ({
-            group: table.group,
-            tables: table.tables.filter((tbl) => tbl.access === true),
-          }));
-        }
-
-        return {
-          group: permission.group,
-          shopName: permission.shopName,
-          tables: filteredTables,
-        };
-      }
-    );
-
     // Generate token including combined permissions
-    const token = generateToken(user.id, combinedPermissions);
+    const token = generateToken(userPayload);
 
     // Send response with user details and token
     res.status(200).json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        permissions: filteredPermissions,
-      },
+      user: userPayload,
       token,
     });
   } catch (error) {

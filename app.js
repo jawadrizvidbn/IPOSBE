@@ -11,6 +11,8 @@ const planRoutes = require("./routes/planRoutes");
 const permissionRoutes = require("./routes/permissionRoute");
 const User = require("./models/user.model"); // Import the User model
 const cookieParser = require("cookie-parser");
+const dotenv = require("dotenv");
+dotenv.config();
 
 const app = express();
 
