@@ -9,6 +9,7 @@ const CreditorCurrentStatement = require("../services/ReportServices/CreditorCur
 const CreditorPreviousStatement = require("../services/ReportServices/CreditorPreviousStatement");
 const FinancialSummary = require("../services/ReportServices/FinancialSummary");
 const GrvDataFun  = require('../services/ReportServices/GrvDataFun');
+const createSequelizeInstanceCustom = require('../utils/sequelizeInstanceCustom');
 exports.findAll = async (req, res) => {
   try {
     const results = await reportsService.findSpeficlyStaticTblDataCurrentTran();
@@ -392,7 +393,9 @@ exports.getMultipleDepartmentsSalesReports = getMultipleDepartmentsSalesReports;
 
 exports.findAllTblDataCurrentTranNames = async (req, res) => {
   try {
-    const activeDatabases = await databaseController.getActiveDatabases(req.user);
+    const {shopKey} = req.query;
+    const {serverHost, serverUser, serverPassword} = req.user
+    const activeDatabases = await databaseController.getActiveDatabases(req.user, shopKey);
     
     console.log(activeDatabases);
 
@@ -426,8 +429,18 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDbPrefix = createSequelizeInstance(stockmasterDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      username: serverUser,
+      password: serverPassword,
+      host: serverHost,
+    });
+    const stockmasterDbPrefix = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      username: serverUser,
+      password: serverPassword,
+      host: serverHost,
+    });
 
  
 
