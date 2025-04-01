@@ -18,11 +18,11 @@ const checkSuperadmin = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(tokenParts[1], process.env.JWT_SECRET); // Extract token from header
-    console.log("Decoded token:", decoded); // Log decoded token
+    // console.log("Decoded token:", decoded); // Log decoded token
     req.userId = decoded.id;
 
     req.permissions = decoded?.permissions || []; // Assuming permissions are JSON string
-    console.log("User permissions:", req.permissions);
+    // console.log("User permissions:", req.permissions);
 
     const user = await User.findByPk(decoded.id);
 
@@ -36,7 +36,7 @@ const checkSuperadmin = async (req, res, next) => {
       allowedStores: JSON.parse(user.allowedStores),
       permissions: JSON.parse(user.permissions),
     };
-    console.log("User role:", user.role);
+    // console.log("User role:", user.role);
 
     // Check if the user is a superadmin
     if (user.role === "superadmin") {
