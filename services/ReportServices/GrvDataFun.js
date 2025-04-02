@@ -1,6 +1,6 @@
 const { QueryTypes } = require('sequelize');
 const { format } = require('date-fns');
-const { getDatabases } = require('../../utils/databaseHelper');
+const { getDatabases, getDatabasesCustom } = require('../../utils/databaseHelper');
 const databaseController = require('../../controllers/databaseController');
 
 // Helper function to handle errors
@@ -81,7 +81,7 @@ const aggregateResults = (totals, data, type) => {
 };
 
 // Main function to calculate GRV, Debtor, Creditor, and Payout data
-exports.GrvDataFun = async (DTPFrom, DTPTo) => {
+exports.GrvDataFun = async (DTPFrom, DTPTo, req) => {
   try {
     // Convert the string date inputs to Date objects
     const fromDate = new Date(DTPFrom);
@@ -92,8 +92,16 @@ exports.GrvDataFun = async (DTPFrom, DTPTo) => {
     if (fromDate > toDate) throw new Error('From date cannot be after To date.');
 
     // Active databases
-    const activeDatabases = await databaseController.getActiveDatabases();
-    const { historyDb, stockmasterDb, hostDb } = getDatabases(activeDatabases);
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { historyDb, stockmasterDb, hostDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+    });
     let totals = {
       CrExclGRVCost: 0,
       CrInclGRVCost: 0,

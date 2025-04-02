@@ -1,4 +1,4 @@
-const { getDatabases } = require('../../utils/databaseHelper');
+const { getDatabases, getDatabasesCustom } = require('../../utils/databaseHelper');
 const databaseController = require("../../controllers/databaseController");
 const { QueryTypes } = require('sequelize');
 const { format, getYear, getMonth, isValid } = require('date-fns');
@@ -64,11 +64,19 @@ const insertHistoryRecords = async (debtorsDb, historyRecords, creditorRecord) =
   return { currentBalance, current, days30, days60, days90, days120, days150, days180, recordsToInsert };
 };
 
-exports.currentCreditorStatement = async (cmbCode, startDate, endDate) => {
+exports.currentCreditorStatement = async (cmbCode, startDate, endDate, req) => {
   try {
     // Get active databases
-    const activeDatabases = await databaseController.getActiveDatabases();
-    const { stockmasterDb, historyDb } = getDatabases(activeDatabases);
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { stockmasterDb, historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+    });
 
     if (!stockmasterDb || !historyDb) {
       throw new Error('Required databases not found');
@@ -188,10 +196,18 @@ exports.currentCreditorStatement = async (cmbCode, startDate, endDate) => {
     handleError('Error processing creditor statement', error);
   }
 };
-exports.GetAllcurrentCreditorDetails = async () => {
+exports.GetAllcurrentCreditorDetails = async (req) => {
   try {
-    const activeDatabases = await databaseController.getActiveDatabases();
-    const { stockmasterDb } = getDatabases(activeDatabases);
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+    });
 
     if (!stockmasterDb) {
       throw new Error('Stockmaster database not found');

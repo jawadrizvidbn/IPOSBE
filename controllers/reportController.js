@@ -10,9 +10,12 @@ const CreditorPreviousStatement = require("../services/ReportServices/CreditorPr
 const FinancialSummary = require("../services/ReportServices/FinancialSummary");
 const GrvDataFun = require("../services/ReportServices/GrvDataFun");
 const createSequelizeInstanceCustom = require("../utils/sequelizeInstanceCustom");
+
 exports.findAll = async (req, res) => {
   try {
-    const results = await reportsService.findSpeficlyStaticTblDataCurrentTran();
+    const results = await reportsService.findSpeficlyStaticTblDataCurrentTran(
+      req
+    );
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -25,6 +28,7 @@ exports.findAll = async (req, res) => {
     }
   }
 };
+
 exports.findDate = async (req, res) => {
   try {
     const { year } = req.body; // Assuming year is in the request body
@@ -34,8 +38,12 @@ exports.findDate = async (req, res) => {
         .json({ message: "Year parameter missing in request body" });
     }
 
+    const { serverHost, serverUser, serverPassword } = req.user;
     // Get the active databases
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Extract the specific databases needed
     let historyDbName, stockmasterDbName;
@@ -69,7 +77,12 @@ exports.findDate = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
     const stockmasterDbPrefix = stockmasterDbName; // Assuming the database name is the prefix for tables
 
     // SQL query with the correct database for joins and dynamic year
@@ -104,6 +117,7 @@ exports.findDate = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 const getDepartmentsSalesReports = async (tableName, req, res) => {
   try {
     const { serverHost, serverUser, serverPassword } = req.user;
@@ -405,6 +419,7 @@ exports.getDepartmentsSalesReports = async (tableName, req, res) => {
 
   await execute(req, res);
 };
+
 const getMultipleDepartmentsSalesReports = async (tableNames, req, res) => {
   try {
     const results = [];
@@ -505,10 +520,15 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.getCurrentGRVandGoodsRecivedNotesReports = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverUser, serverPassword } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Extract the specific databases needed
     let historyDbName, stockmasterDbName;
@@ -542,7 +562,12 @@ exports.getCurrentGRVandGoodsRecivedNotesReports = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const stockmasterDbPrefix = createSequelizeInstance(stockmasterDbName);
+    const stockmasterDbPrefix = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
 
     // Preliminary query to check if the dates are valid
     let dateValidityQuery = `SELECT MIN(DateTime) AS minDate, MAX(DateTime) AS maxDate FROM tbldata_grn_det`;
@@ -639,9 +664,14 @@ exports.getCurrentGRVandGoodsRecivedNotesReports = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.findAllTblDataAdjustment = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverUser, serverPassword } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Extract the specific databases needed
     let historyDbName, stockmasterDbName;
@@ -675,8 +705,18 @@ exports.findAllTblDataAdjustment = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDbPrefix = createSequelizeInstance(stockmasterDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
+    const stockmasterDbPrefix = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
 
     // Execute query
     let sqlQuery = `SELECT * FROM tbldataadjustment`;
@@ -694,9 +734,14 @@ exports.findAllTblDataAdjustment = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.getAdjustmentReport = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverUser, serverPassword } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
     const { tableName } = req.query; // Get table names from query parameters
 
     if (!tableName) {
@@ -740,7 +785,12 @@ exports.getAdjustmentReport = async (req, res) => {
     }
 
     // Create Sequelize instance for history database
-    const historyDb = createSequelizeInstance(historyDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
 
     // Prepare results container
     const results = [];
@@ -798,9 +848,14 @@ exports.getAdjustmentReport = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.findAllTblDataCashupDet = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverUser, serverPassword } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Extract the specific databases needed
     let historyDbName, stockmasterDbName;
@@ -834,8 +889,18 @@ exports.findAllTblDataCashupDet = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDbPrefix = createSequelizeInstance(stockmasterDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
+    const stockmasterDbPrefix = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
 
     // Execute query
     let sqlQuery = `SELECT * FROM tbldatacashup_det`;
@@ -853,9 +918,14 @@ exports.findAllTblDataCashupDet = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.currentCashupReport = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverUser, serverPassword } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
     const tableNames = req.params.tableName.split(","); // Extract multiple table names from request parameters
 
     // Extract the specific databases needed
@@ -890,8 +960,18 @@ exports.currentCashupReport = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDb = createSequelizeInstance(stockmasterDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
+    const stockmasterDb = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
 
     // Define SQL query with dynamic table names and additional fields
     const sqlQuery = tableNames
@@ -971,9 +1051,14 @@ exports.currentCashupReport = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.CachupReportByClerkReport = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverUser, serverPassword } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
     const tableNames = req.params.tableName.split(","); // Extract multiple table names from request parameters
 
     // Extract the specific databases needed
@@ -1008,8 +1093,18 @@ exports.CachupReportByClerkReport = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDb = createSequelizeInstance(stockmasterDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
+    const stockmasterDb = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+    });
 
     // Define SQL query with dynamic table names and additional fields
     const sqlQuery = tableNames
@@ -1136,6 +1231,7 @@ exports.CachupReportByClerkReport = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.tblReg = async (req, res) => {
   try {
     const results = await reportsService.companydetailstblReg(req);
@@ -1151,10 +1247,11 @@ exports.tblReg = async (req, res) => {
     }
   }
 };
+
 exports.accrossShopReport = async (req, res) => {
   const { startDate, endDate } = req.query; // Get dates from query parameters
   try {
-    const results = await reportsService.acrossReport(startDate, endDate);
+    const results = await reportsService.acrossReport(startDate, endDate, req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1168,9 +1265,10 @@ exports.accrossShopReport = async (req, res) => {
       .json({ message: error.message });
   }
 };
+
 exports.findAllTblDataCancelTran = async (req, res) => {
   try {
-    const results = await reportsService.allTblDataCancelTran();
+    const results = await reportsService.allTblDataCancelTran(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1183,9 +1281,10 @@ exports.findAllTblDataCancelTran = async (req, res) => {
     }
   }
 };
+
 exports.findAllTblDataPrice = async (req, res) => {
   try {
-    const results = await reportsService.allTblDataPrice();
+    const results = await reportsService.allTblDataPrice(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1198,9 +1297,10 @@ exports.findAllTblDataPrice = async (req, res) => {
     }
   }
 };
+
 exports.findAllTblPayout = async (req, res) => {
   try {
-    const results = await reportsService.allTblPayout();
+    const results = await reportsService.allTblPayout(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1213,9 +1313,10 @@ exports.findAllTblPayout = async (req, res) => {
     }
   }
 };
+
 exports.CreditorsValueReport = async (req, res) => {
   try {
-    const results = await reportsService.allTblCreditorsValue();
+    const results = await reportsService.allTblCreditorsValue(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1228,9 +1329,10 @@ exports.CreditorsValueReport = async (req, res) => {
     }
   }
 };
+
 exports.DebtorsValueReport = async (req, res) => {
   try {
-    const results = await reportsService.allTblDebtorsValue();
+    const results = await reportsService.allTblDebtorsValue(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1243,9 +1345,10 @@ exports.DebtorsValueReport = async (req, res) => {
     }
   }
 };
+
 exports.StockValueReport = async (req, res) => {
   try {
-    const results = await reportsService.allTblStockValue();
+    const results = await reportsService.allTblStockValue(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1258,9 +1361,10 @@ exports.StockValueReport = async (req, res) => {
     }
   }
 };
+
 exports.findAllTblDataStockActivity = async (req, res) => {
   try {
-    const results = await reportsService.allTblStockActivity();
+    const results = await reportsService.allTblStockActivity(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1273,9 +1377,10 @@ exports.findAllTblDataStockActivity = async (req, res) => {
     }
   }
 };
+
 exports.findAllTblDataCreditorsTran = async (req, res) => {
   try {
-    const results = await reportsService.allTblDataCreditorsTran();
+    const results = await reportsService.allTblDataCreditorsTran(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1288,9 +1393,10 @@ exports.findAllTblDataCreditorsTran = async (req, res) => {
     }
   }
 };
+
 exports.findAllTblDataDebtorsTran = async (req, res) => {
   try {
-    const results = await reportsService.allTblDataDebtorsTran();
+    const results = await reportsService.allTblDataDebtorsTran(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1303,9 +1409,10 @@ exports.findAllTblDataDebtorsTran = async (req, res) => {
     }
   }
 };
+
 exports.findAllDepartmentWithCategories = async (req, res) => {
   try {
-    const results = await reportsService.allDepartmentsWithCategories();
+    const results = await reportsService.allDepartmentsWithCategories(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -1318,6 +1425,7 @@ exports.findAllDepartmentWithCategories = async (req, res) => {
     }
   }
 };
+
 exports.StockOnHandReport = async (req, res) => {
   try {
     // Extract MajorNo, Sub1No, and Sub2No from query parameters
@@ -1351,7 +1459,8 @@ exports.StockOnHandReport = async (req, res) => {
       includeZeroLastCostPrice,
       includeZeroAvarageCostPrice,
       includeZeroLaybyeStock,
-      includeOnlyPositiveStock
+      includeOnlyPositiveStock,
+      req
     );
 
     res.send(results);
@@ -1379,7 +1488,8 @@ exports.voidReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.tblDataCancelTranSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1395,6 +1505,7 @@ exports.voidReport = async (req, res) => {
     }
   }
 };
+
 exports.priceChangeReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1405,7 +1516,10 @@ exports.priceChangeReport = async (req, res) => {
     }
 
     // Pass the table names to the service function
-    const results = await reportsService.tblDataPriceSearchTables(tableName);
+    const results = await reportsService.tblDataPriceSearchTables(
+      tableName,
+      req
+    );
 
     res.send(results);
   } catch (error) {
@@ -1420,6 +1534,7 @@ exports.priceChangeReport = async (req, res) => {
     }
   }
 };
+
 exports.PayoutReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1430,7 +1545,10 @@ exports.PayoutReport = async (req, res) => {
     }
 
     // Pass the table names to the service function
-    const results = await reportsService.tblDataPayoutSearchTables(tableName);
+    const results = await reportsService.tblDataPayoutSearchTables(
+      tableName,
+      req
+    );
 
     res.send(results);
   } catch (error) {
@@ -1445,6 +1563,7 @@ exports.PayoutReport = async (req, res) => {
     }
   }
 };
+
 exports.StockActivityReport = async (req, res) => {
   try {
     // Extract table names and stockcode from the request query
@@ -1457,7 +1576,8 @@ exports.StockActivityReport = async (req, res) => {
     // Pass the table names and stockcode (if provided) to the service function
     const results = await reportsService.tblDataStockActivitySearchTables(
       tableName,
-      stockcode
+      stockcode,
+      req
     );
 
     res.send(results);
@@ -1473,6 +1593,7 @@ exports.StockActivityReport = async (req, res) => {
     }
   }
 };
+
 exports.CreditorsTranReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1484,7 +1605,8 @@ exports.CreditorsTranReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.tblDataCreditorsTranSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1512,7 +1634,8 @@ exports.CreditorsCreditNotesReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.CreditorsCreditNotesReportSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1528,6 +1651,7 @@ exports.CreditorsCreditNotesReport = async (req, res) => {
     }
   }
 };
+
 exports.CreditorsDebitNotesReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1539,7 +1663,8 @@ exports.CreditorsDebitNotesReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.CreditorsDebitNotesSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1555,6 +1680,7 @@ exports.CreditorsDebitNotesReport = async (req, res) => {
     }
   }
 };
+
 exports.CreditorsInvoicesReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1566,7 +1692,8 @@ exports.CreditorsInvoicesReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.CreditorsInvoicesNotesSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1594,7 +1721,8 @@ exports.CreditorsPaymentsReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.CreditorsPaymentNotesSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1610,6 +1738,7 @@ exports.CreditorsPaymentsReport = async (req, res) => {
     }
   }
 };
+
 exports.DebtorsTranReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1621,7 +1750,8 @@ exports.DebtorsTranReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.tblDataDebtorsTranSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1649,7 +1779,8 @@ exports.DebtorsCreditNotesReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.DebtorsCreditNotesReportSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1665,6 +1796,7 @@ exports.DebtorsCreditNotesReport = async (req, res) => {
     }
   }
 };
+
 exports.DebtorsDebitNotesReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1676,7 +1808,8 @@ exports.DebtorsDebitNotesReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.DebtorsDebitNotesSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1692,6 +1825,7 @@ exports.DebtorsDebitNotesReport = async (req, res) => {
     }
   }
 };
+
 exports.DebtorsInvoicesReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1703,7 +1837,8 @@ exports.DebtorsInvoicesReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.DebtorsAccountNotesSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1719,6 +1854,7 @@ exports.DebtorsInvoicesReport = async (req, res) => {
     }
   }
 };
+
 exports.DebtorsPaymentsReport = async (req, res) => {
   try {
     // Extract table names from the request query
@@ -1730,7 +1866,8 @@ exports.DebtorsPaymentsReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results = await reportsService.DebtorsPaymentNotesSearchTables(
-      tableName
+      tableName,
+      req
     );
 
     res.send(results);
@@ -1758,7 +1895,10 @@ exports.HistoryProductSaleByInvoiceReport = async (req, res) => {
 
     // Pass the table names to the service function
     const results =
-      await reportsService.HistoryProductSaleByInvoiceSearchTables(tableName);
+      await reportsService.HistoryProductSaleByInvoiceSearchTables(
+        tableName,
+        req
+      );
 
     res.send(results);
   } catch (error) {
@@ -1773,10 +1913,13 @@ exports.HistoryProductSaleByInvoiceReport = async (req, res) => {
     }
   }
 };
+
 exports.DailySalesReport = async (req, res, tableName) => {
   try {
+    const { serverHost, serverPassword, serverUser } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
-      req.user
+      req.user,
+      req.query.shopKey
     );
 
     // Extract the specific databases needed
@@ -1811,8 +1954,18 @@ exports.DailySalesReport = async (req, res, tableName) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDbPrefix = createSequelizeInstance(stockmasterDbName); // Assuming the database name is the prefix for tables
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    });
+    const stockmasterDbPrefix = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    }); // Assuming the database name is the prefix for tables
 
     // SQL query with the correct database for joins
     console.log(tableName, "rana here");
@@ -2170,7 +2323,11 @@ exports.DailySalesReport = async (req, res, tableName) => {
 
 exports.currentinvoicesReports = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverPassword, serverUser } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
     const tableNames = req.params.tableName.split(","); // Extract and split table names from request parameters
 
     // Validate tableNames
@@ -2212,8 +2369,18 @@ exports.currentinvoicesReports = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDbPrefix = createSequelizeInstance(stockmasterDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    });
+    const stockmasterDbPrefix = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
     const sqlQuery = `
@@ -2265,9 +2432,14 @@ exports.currentinvoicesReports = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.SaleInvoicesByClerkReports = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverPassword, serverUser } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
     const tableNames = req.params.tableName.split(","); // Extract and split table names from request parameters
 
     // Validate tableNames
@@ -2309,8 +2481,18 @@ exports.SaleInvoicesByClerkReports = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDbPrefix = createSequelizeInstance(stockmasterDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    });
+    const stockmasterDbPrefix = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
     const sqlQuery = `
@@ -2376,9 +2558,14 @@ exports.SaleInvoicesByClerkReports = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.InvoicesByStationReports = async (req, res) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverPassword, serverUser } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
     const tableNames = req.params.tableName.split(","); // Extract and split table names from request parameters
 
     // Validate tableNames
@@ -2420,8 +2607,18 @@ exports.InvoicesByStationReports = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
-    const stockmasterDbPrefix = createSequelizeInstance(stockmasterDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    });
+    const stockmasterDbPrefix = createSequelizeInstanceCustom({
+      databaseName: stockmasterDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
     const sqlQuery = `
@@ -2487,10 +2684,14 @@ exports.InvoicesByStationReports = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.refundReport = async (req, res) => {
   try {
-    // Retrieve active databases
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverPassword, serverUser } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
     const tableNames = req.params.tableName.split(","); // Extract and split table names from request parameters
 
     // Validate tableNames
@@ -2532,7 +2733,12 @@ exports.refundReport = async (req, res) => {
     }
 
     // Create Sequelize instances
-    const historyDb = createSequelizeInstance(historyDbName);
+    const historyDb = createSequelizeInstanceCustom({
+      databaseName: historyDbName,
+      host: serverHost,
+      password: serverPassword,
+      username: serverUser,
+    });
 
     // Build dynamic SQL query for multiple tables
     const sqlQuery = `
@@ -2579,9 +2785,10 @@ exports.refundReport = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.CurrentDebtorsAnalysisReport = async (req, res) => {
   try {
-    const results = await reportsService.CurrentDebtorsAnalysis();
+    const results = await reportsService.CurrentDebtorsAnalysis(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -2594,6 +2801,7 @@ exports.CurrentDebtorsAnalysisReport = async (req, res) => {
     }
   }
 };
+
 exports.PERVIOUSDebtorsAgeAnalysisReport = async (req, res) => {
   try {
     const { debtorGroup, previousAging, checkBalanceGreaterthanZero } =
@@ -2603,7 +2811,8 @@ exports.PERVIOUSDebtorsAgeAnalysisReport = async (req, res) => {
     const results = await reportsService.PERVIOUSDebtorsAgeAnalysis(
       debtorGroup,
       previousAging,
-      isGreaterThanZero
+      isGreaterThanZero,
+      req
     );
     res.send(results);
   } catch (error) {
@@ -2617,13 +2826,14 @@ exports.PERVIOUSDebtorsAgeAnalysisReport = async (req, res) => {
     }
   }
 };
+
 exports.GetAllPERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async (
   req,
   res
 ) => {
   try {
     const results =
-      await reportsService.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging();
+      await reportsService.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -2636,6 +2846,7 @@ exports.GetAllPERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async (
     }
   }
 };
+
 exports.CURRENTDebtorsAgeAnalysisReport = async (req, res) => {
   try {
     const { debtorGroup, previousAging, checkBalanceGreaterthanZero } =
@@ -2645,7 +2856,8 @@ exports.CURRENTDebtorsAgeAnalysisReport = async (req, res) => {
     const results = await reportsService.CURRENTDebtorsAgeAnalysis(
       debtorGroup,
       previousAging,
-      isGreaterThanZero
+      isGreaterThanZero,
+      req
     );
     res.send(results);
   } catch (error) {
@@ -2659,13 +2871,16 @@ exports.CURRENTDebtorsAgeAnalysisReport = async (req, res) => {
     }
   }
 };
+
 exports.GetAllCURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem = async (
   req,
   res
 ) => {
   try {
     const results =
-      await reportsService.CURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem();
+      await reportsService.CURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem(
+        req
+      );
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -2678,6 +2893,7 @@ exports.GetAllCURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem = async (
     }
   }
 };
+
 exports.CreditorAnalysisReport = async (req, res) => {
   try {
     const { CmbPreviousAging, checkBalanceGreaterThanZero } = req.query; // or req.query, depending on your setup
@@ -2685,7 +2901,8 @@ exports.CreditorAnalysisReport = async (req, res) => {
     const isGreaterThanZero = checkBalanceGreaterThanZero === "true";
     const results = await reportsService.CreditorAnalysis(
       CmbPreviousAging,
-      isGreaterThanZero
+      isGreaterThanZero,
+      req
     );
     res.send(results);
   } catch (error) {
@@ -2699,9 +2916,10 @@ exports.CreditorAnalysisReport = async (req, res) => {
     }
   }
 };
+
 exports.GetAllCreditorAnalysisCmbPreviousAging = async (req, res) => {
   try {
-    const results = await reportsService.CreditorAnalysisCmbPreviousAging();
+    const results = await reportsService.CreditorAnalysisCmbPreviousAging(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -2714,6 +2932,7 @@ exports.GetAllCreditorAnalysisCmbPreviousAging = async (req, res) => {
     }
   }
 };
+
 exports.CURRENTCreditorsAgeAnalysisReport = async (req, res) => {
   try {
     // Read from query parameters
@@ -2722,7 +2941,8 @@ exports.CURRENTCreditorsAgeAnalysisReport = async (req, res) => {
     // Convert to boolean
     const isGreaterThanZero = checkBalanceGreaterThanZero === "true";
     const results = await reportsService.CURRENTCreditorsAgeAnalysis(
-      isGreaterThanZero
+      isGreaterThanZero,
+      req
     );
     res.send(results);
   } catch (error) {
@@ -2736,9 +2956,10 @@ exports.CURRENTCreditorsAgeAnalysisReport = async (req, res) => {
     }
   }
 };
+
 exports.MinStockLevelReport = async (req, res) => {
   try {
-    const results = await reportsService.allDataMinStockLevel();
+    const results = await reportsService.allDataMinStockLevel(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -2751,9 +2972,10 @@ exports.MinStockLevelReport = async (req, res) => {
     }
   }
 };
+
 exports.MaxStockLevelReport = async (req, res) => {
   try {
-    const results = await reportsService.allDataMaxStockLevel();
+    const results = await reportsService.allDataMaxStockLevel(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -2766,10 +2988,11 @@ exports.MaxStockLevelReport = async (req, res) => {
     }
   }
 };
+
 exports.SixWeekReport = async (req, res) => {
   try {
     // Call the service function and pass the request body to it
-    const results = await reportsService.sixWeek(req.body);
+    const results = await reportsService.sixWeek(req.body, req);
 
     // Return the results from the service function
     res.json(results);
@@ -2788,9 +3011,10 @@ exports.SixWeekReport = async (req, res) => {
     }
   }
 };
+
 exports.CreditoritemsGrouping = async (req, res) => {
   try {
-    const results = await reportsService.tblcreditoritemsGroup();
+    const results = await reportsService.tblcreditoritemsGroup(req);
     res
       .status(200)
       .json({ message: "Data inserted successfully", data: results });
@@ -2805,6 +3029,7 @@ exports.CreditoritemsGrouping = async (req, res) => {
     }
   }
 };
+
 exports.SaleRepCommissionReport = async (req, res) => {
   const { DateFrom, DateTo } = req.body;
   if (!DateFrom || !DateTo) {
@@ -2814,7 +3039,7 @@ exports.SaleRepCommissionReport = async (req, res) => {
   }
 
   try {
-    const results = await reportsService.saleRepCommission(DateFrom, DateTo);
+    const results = await reportsService.saleRepCommission(DateFrom, DateTo, req);
     res
       .status(200)
       .json({ message: "Data inserted successfully", data: results });
@@ -2829,6 +3054,7 @@ exports.SaleRepCommissionReport = async (req, res) => {
     }
   }
 };
+
 exports.saleRepCommissionByProductReport = async (req, res) => {
   const { DateFrom, DateTo } = req.body;
   if (!DateFrom || !DateTo) {
@@ -2840,7 +3066,8 @@ exports.saleRepCommissionByProductReport = async (req, res) => {
   try {
     const results = await reportsService.saleRepCommissionByProduct(
       DateFrom,
-      DateTo
+      DateTo,
+      req
     );
     res
       .status(200)
@@ -2856,6 +3083,7 @@ exports.saleRepCommissionByProductReport = async (req, res) => {
     }
   }
 };
+
 exports.CurrentDebtorsStatementReport = async (req, res) => {
   const { cmbCode, cmbType, startDate, endDate } = req.query;
 
@@ -2878,7 +3106,8 @@ exports.CurrentDebtorsStatementReport = async (req, res) => {
       cmbCode,
       cmbType,
       startDate,
-      endDate
+      endDate,
+      req
     );
 
     if (results.message) {
@@ -2893,10 +3122,11 @@ exports.CurrentDebtorsStatementReport = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.GetAllCurrentDeborsDetails = async (req, res) => {
   try {
     // Fetch all records
-    const results = await DebtorCurrentStatement.GetAllcurrentDebtorsDetails();
+    const results = await DebtorCurrentStatement.GetAllcurrentDebtorsDetails(req);
 
     if (results.message) {
       return res.status(404).json({ message: results.message });
@@ -2921,6 +3151,7 @@ exports.GetAllCurrentDeborsDetails = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.PreviousDebtorsStatementReport = async (req, res) => {
   const { cmbCode, startDate, endDate } = req.query;
 
@@ -2942,7 +3173,8 @@ exports.PreviousDebtorsStatementReport = async (req, res) => {
     const results = await DebtorPreviousStatement.previousDebtorsStatement(
       cmbCode,
       startDate,
-      endDate
+      endDate,
+      req
     );
 
     if (results.message) {
@@ -2957,10 +3189,11 @@ exports.PreviousDebtorsStatementReport = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.GetAllPerviousDeborsDetails = async (req, res) => {
   try {
     const results =
-      await DebtorPreviousStatement.GetAllPreviousDebtorsDetails();
+      await DebtorPreviousStatement.GetAllPreviousDebtorsDetails(req);
 
     // Check if no data was found
     if (!results.data || results.data.length === 0) {
@@ -2999,7 +3232,8 @@ exports.CurrentCreditorStatementReport = async (req, res) => {
     const results = await CreditorCurrentStatement.currentCreditorStatement(
       cmbCode,
       startDate,
-      endDate
+      endDate,
+      req
     );
 
     if (results.message) {
@@ -3014,11 +3248,12 @@ exports.CurrentCreditorStatementReport = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.GetAllCurrentCreditorDetails = async (req, res) => {
   try {
     // Fetch all records
     const results =
-      await CreditorCurrentStatement.GetAllcurrentCreditorDetails();
+      await CreditorCurrentStatement.GetAllcurrentCreditorDetails(req);
 
     if (results.message) {
       return res.status(404).json({ message: results.message });
@@ -3065,7 +3300,8 @@ exports.PreviousCreditorStatementReport = async (req, res) => {
     const results = await CreditorPreviousStatement.previousCreditorStatement(
       cmbCode,
       startDate,
-      endDate
+      endDate,
+      req
     );
 
     if (results.message) {
@@ -3080,10 +3316,11 @@ exports.PreviousCreditorStatementReport = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 exports.GetAllPerviousCreditorDetails = async (req, res) => {
   try {
     const results =
-      await CreditorPreviousStatement.GetAllPreviousCreditorDetails();
+      await CreditorPreviousStatement.GetAllPreviousCreditorDetails(req);
 
     // Check if no data was found
     if (!results.data || results.data.length === 0) {
@@ -3122,7 +3359,7 @@ exports.FinancialSummaryReport = async (req, res) => {
       return res.status(400).json({ message: "DTPFrom cannot be after DTPTo" });
     }
 
-    const results = await FinancialSummary.FinancialSummary(startDate, endDate);
+    const results = await FinancialSummary.FinancialSummary(startDate, endDate, req);
     res
       .status(200)
       .json({ message: "Data fetched successfully", data: results });
@@ -3147,7 +3384,7 @@ exports.GrvDataFunReport = async (req, res) => {
     }
 
     // Call the GrvDataFun function with the 'DTPFrom' and 'DTPTo' parameters
-    const results = await GrvDataFun.GrvDataFun(DTPFrom, DTPTo);
+    const results = await GrvDataFun.GrvDataFun(DTPFrom, DTPTo, req);
 
     // Return the results as a response
     res

@@ -64,11 +64,19 @@ const insertHistoryRecords = async (stockmasterDb, historyRecords, creditorRecor
   return { currentBalance, current, days30, days60, days90, days120, days150, days180, recordsToInsert };
 };
 
-exports.previousCreditorStatement = async (cmbCode, startDate, endDate) => {
+exports.previousCreditorStatement = async (cmbCode, startDate, endDate, req) => {
   try {
     // Get active databases
-    const activeDatabases = await databaseController.getActiveDatabases();
-    const { stockmasterDb, historyDb } = getDatabases(activeDatabases);
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { stockmasterDb, historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+    });
 
     if (!stockmasterDb || !historyDb) {
       throw new Error('Required databases not found');
@@ -206,11 +214,19 @@ exports.previousCreditorStatement = async (cmbCode, startDate, endDate) => {
     handleError('Error processing creditor statement', error);
   }
 };
-exports.GetAllPreviousCreditorDetails = async () => {
+exports.GetAllPreviousCreditorDetails = async (req) => {
   try {
     // Fetch active databases
-    const activeDatabases = await databaseController.getActiveDatabases();
-    const { stockmasterDb } = getDatabases(activeDatabases);
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+    });
 
     if (!stockmasterDb) {
       throw new Error('Stockmaster database not found');
