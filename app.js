@@ -16,25 +16,28 @@ dotenv.config();
 
 const app = express();
 
-const allowedOrigins = [
-  "http://localhost:3000", // Local React app
-  "http://165.73.85.11:2025/",
-];
+// const allowedOrigins = [
+//   "http://localhost:3000", // Local React app
+//   "http://165.73.85.11:2025/",
+// ];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true); // ✅ Allow request
-      } else {
-        callback(new Error("Not allowed by CORS")); // ❌ Reject request
-      }
-    },
-    credentials: true, // Allow cookies
-    methods: ["GET", "POST", "PUT", "DELETE"], // Allow necessary methods
-    allowedHeaders: ["Content-Type", "Authorization"], // Allow headers
-  })
-);
+// app.use(
+//   cors({
+//     origin: (origin, callback) => {
+//       if (!origin || allowedOrigins.includes(origin)) {
+//         callback(null, true); // ✅ Allow request
+//       } else {
+//         callback(new Error("Not allowed by CORS")); // ❌ Reject request
+//       }
+//     },
+//     credentials: true, // Allow cookies
+//     methods: ["GET", "POST", "PUT", "DELETE"], // Allow necessary methods
+//     allowedHeaders: ["Content-Type", "Authorization"], // Allow headers
+//   })
+// );
+
+app.use(cors());
+
 app.use(cookieParser());
 app.use(bodyParser.json());
 
