@@ -227,6 +227,7 @@ exports.login = async (req, res) => {
       plan: user.plan,
       planStartDate: user.planStartDate,
       planEndDate: user.planEndDate,
+      referenceNumber: user?.referenceNumber || ""
     };
     // Check if the user is superadmin
     if (user.role === "superadmin") {
@@ -286,7 +287,8 @@ exports.getAllUsers = async (req, res) => {
         planActive: user.planActive,
         planStartDate: user.planStartDate,
         planEndDate: user.planEndDate,
-        permissions: JSON.parse(user.permissions), // Use parsedPermissions or default to an empty object
+        permissions: JSON.parse(user.permissions), // Use parsedPermissions or default to an empty object,
+        referenceNumber: user.referenceNumber
       };
     });
 
@@ -320,6 +322,7 @@ exports.getUserById = async (req, res) => {
       serverUser: user.serverUser,
       serverPassword: user.serverPassword,
       allowedStores: JSON.parse(user.allowedStores),
+      referenceNumber: user.referenceNumber
     });
   } catch (error) {
     console.error("Error fetching user by ID:", error);
