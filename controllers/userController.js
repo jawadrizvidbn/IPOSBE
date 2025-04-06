@@ -186,6 +186,7 @@ exports.create = async (req, res) => {
     // Respond with the new user and token
     res.status(201).json({ user: newUser });
   } catch (error) {
+    console.log(error)
     res.status(500).json({ message: error.message });
   }
 };
