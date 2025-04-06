@@ -62,6 +62,10 @@ const User = sequelize.define("User", {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  referenceNumber: {
+    type: DataTypes.TEXT,
+    allowNull: false,
+  },
   // Store login history as a string and parse it
   loginHistory: {
     type: DataTypes.TEXT, // Store login history as a JSON string

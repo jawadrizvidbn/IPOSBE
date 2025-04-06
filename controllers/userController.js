@@ -162,6 +162,7 @@ exports.create = async (req, res) => {
       planStartDate, // Default start date
       planEndDate, // Default end date
       gracePeriod = 0,
+      referenceNumber
     } = req.body;
 
     // Hash the password
@@ -181,6 +182,7 @@ exports.create = async (req, res) => {
       planStartDate,
       planEndDate,
       gracePeriod,
+      referenceNumber
     });
 
     // Respond with the new user and token
