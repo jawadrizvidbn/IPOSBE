@@ -20,7 +20,7 @@ const connectServerAndGetAllDatabases = async (req, res) => {
       .map((row) => row.Database || row.database || null)
       .filter((db) => !excludePattern.test(db))
       .map((dbName) =>
-        dbName.replace(/(debtors|history|host|master|stockmaster)$/i, "").trim()
+        dbName.replace(/(debtors|history|host|master|stockmaster)/gi, "").trim()
       );
 
     const uniqueStores = [...new Set(filteredStores)];
@@ -121,7 +121,7 @@ const getallshop = async (req, res) => {
 
       // Dynamically determine the baseName by removing specific suffixes (e.g., debtors, history, etc.)
       const baseName = dbName
-        .replace(/(debtors|history|host|master|stockmaster)$/i, "")
+        .replace(/(debtors|history|host|master|stockmaster)/gi, "")
         .trim();
 
       // Exclude databases where baseName becomes empty or does not follow our valid patterns
@@ -145,6 +145,7 @@ const getallshop = async (req, res) => {
 
     // Iterate over each group in groupedDatabases
     Object.keys(groupedDatabases).forEach((group) => {
+
       // Find permissions for the current group
       const allowedGroup = allowedStores.find((store) => store === group);
 

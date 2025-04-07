@@ -45,14 +45,6 @@ const checkSuperadmin = async (req, res, next) => {
       return next(); // Allow access for superadmin
     }
 
-    // If not a superadmin, ensure permissions are set
-    if (!req.permissions) {
-      console.log("Permissions not found in token");
-      return res
-        .status(401)
-        .json({ message: "Permissions not found in token" });
-    }
-
     // Set user permissions in request object
     req.userPermissions = req.permissions || []; // Ensure userPermissions is an array
     next();
