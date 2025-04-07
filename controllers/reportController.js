@@ -40,7 +40,7 @@ exports.findDate = async (req, res) => {
 
     const { serverHost, serverUser, serverPassword } = req.user;
     // Get the active databases
-    const activeDatabases = await databaseController.getActiveDatabases(
+    const activeDat7abases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
     );
@@ -55,11 +55,11 @@ exports.findDate = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -136,11 +136,11 @@ const getDepartmentsSalesReports = async (tableName, req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -469,11 +469,11 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
           console.log(dbName);
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -540,11 +540,11 @@ exports.getCurrentGRVandGoodsRecivedNotesReports = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -683,11 +683,11 @@ exports.findAllTblDataAdjustment = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -761,11 +761,11 @@ exports.getAdjustmentReport = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -867,11 +867,11 @@ exports.findAllTblDataCashupDet = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -938,11 +938,11 @@ exports.currentCashupReport = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -1071,11 +1071,11 @@ exports.CachupReportByClerkReport = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -1932,11 +1932,11 @@ exports.DailySalesReport = async (req, res, tableName) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -2347,11 +2347,11 @@ exports.currentinvoicesReports = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -2459,11 +2459,11 @@ exports.SaleInvoicesByClerkReports = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -2585,11 +2585,11 @@ exports.InvoicesByStationReports = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
@@ -2711,11 +2711,11 @@ exports.refundReport = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          if (dbName.endsWith("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
-            dbName.endsWith("stockmaster") ||
-            dbName.endsWith("master")
+            dbName.includes("stockmaster") ||
+            dbName.includes("master")
           ) {
             stockmasterDbName = dbName;
           }
