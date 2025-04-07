@@ -283,7 +283,7 @@ const findAllAndActiveDatabase = async (req, res) => {
     const groupedDatabases = databases.reduce((acc, dbName) => {
       if (!dbName) return acc;
       const name = dbName.replace(
-        /(debtors|history|host|master|stockmaster)$/i,
+        /(debtors|history|host|master|stockmaster)/gi,
         ""
       );
       if (!acc[name]) acc[name] = [];
