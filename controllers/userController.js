@@ -156,6 +156,7 @@ exports.create = async (req, res) => {
       serverHost,
       serverPassword,
       serverUser,
+      serverPort,
       allowedStores = [],
       permissions = [],
       plan,
@@ -176,6 +177,7 @@ exports.create = async (req, res) => {
       serverHost,
       serverPassword,
       serverUser,
+      serverPort,
       allowedStores: JSON.stringify(allowedStores),
       permissions: JSON.stringify(permissions),
       plan,
@@ -224,6 +226,7 @@ exports.login = async (req, res) => {
       serverHost: user.serverHost,
       serverPassword: user.serverPassword,
       serverUser: user.serverUser,
+      serverPort: user.serverPort,
       plan: user.plan,
       planStartDate: user.planStartDate,
       planEndDate: user.planEndDate,
@@ -321,6 +324,7 @@ exports.getUserById = async (req, res) => {
       serverHost: user.serverHost,
       serverUser: user.serverUser,
       serverPassword: user.serverPassword,
+      serverPort: user.serverPort,
       allowedStores: JSON.parse(user.allowedStores),
       referenceNumber: user.referenceNumber
     });
@@ -350,6 +354,7 @@ exports.updateUser = async (req, res) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
       allowedStores,
       password,
     } = req.body;
@@ -372,6 +377,7 @@ exports.updateUser = async (req, res) => {
     user.serverHost = serverHost;
     user.serverUser = serverUser;
     user.serverPassword = serverPassword;
+    user.serverPort = serverPort;
     user.allowedStores = JSON.stringify(allowedStores);
     await user.save();
     res.status(200).json({ message: "User updated successfully" });

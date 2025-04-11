@@ -58,6 +58,10 @@ const User = sequelize.define("User", {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  serverPort: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   allowedStores: {
     type: DataTypes.TEXT,
     allowNull: true,
