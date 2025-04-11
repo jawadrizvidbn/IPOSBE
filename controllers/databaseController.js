@@ -4,9 +4,10 @@ const createSequelizeInstance = require("../utils/sequelizeInstance");
 
 const connectServerAndGetAllDatabases = async (req, res) => {
   try {
-    const { host, user, password } = req.body;
+    const { host, user, password, port } = req.body;
     const connection = new Sequelize("", user, password, {
       host,
+      port: port || '3306',
       dialect: "mysql",
     });
     const results = await connection.query("SHOW DATABASES", {
