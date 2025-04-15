@@ -97,10 +97,11 @@ const getallshop = async (req, res) => {
     // Fetch all databases
     console.log("allowed stores: ", req.user?.allowedStores);
 
-    const { serverHost, serverUser, serverPassword, allowedStores } = req.user;
-
+    const { serverHost, serverUser, serverPassword, allowedStores, serverPort } = req.user;
+    
     const userInstance = new Sequelize("", serverUser, serverPassword, {
       host: serverHost,
+      port: serverPort,
       dialect: "mysql",
     });
     const results = await userInstance.query("SHOW DATABASES", {
