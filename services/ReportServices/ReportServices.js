@@ -54,7 +54,7 @@ exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
 };
 exports.companydetailstblReg = async (req) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -66,6 +66,7 @@ exports.companydetailstblReg = async (req) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     });
 
     let sqlQuery = `SELECT * FROM tblreg`;
@@ -84,7 +85,7 @@ exports.companydetailstblReg = async (req) => {
 
 exports.acrossReport = async (startDate, endDate, req) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -202,7 +203,7 @@ exports.acrossReport = async (startDate, endDate, req) => {
 
 exports.allTblDataCancelTran = async (req) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -214,6 +215,7 @@ exports.allTblDataCancelTran = async (req) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     });
     let sqlQuery = `SELECT * FROM tbldatacancel_tran`;
     const results = await historyDb.query(sqlQuery, {
@@ -243,6 +245,7 @@ exports.tblDataCancelTranSearchTables = async (tableNames, req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
 
     // Split the table names by comma and validate each one
@@ -289,6 +292,7 @@ exports.allTblDataPrice = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
     let sqlQuery = `SELECT * FROM tbldataprice`;
     const results = await historyDb.query(sqlQuery, {
@@ -317,6 +321,7 @@ exports.tblDataPriceSearchTables = async (tableNames, req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
 
     // Split the table names by comma and validate each one
@@ -367,6 +372,7 @@ exports.tblDataStockActivitySearchTables = (
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
       const tables = tableNames.split(",").map((name) => name.trim());
 
@@ -505,6 +511,7 @@ exports.allTblPayout = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
     let sqlQuery = `SELECT * FROM tbldatapayout`;
     const results = await historyDb.query(sqlQuery, {
@@ -532,6 +539,7 @@ exports.allTblStockActivity = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
     let sqlQuery = `SELECT * FROM tbldatastockactivity`;
     const results = await historyDb.query(sqlQuery, {
@@ -559,6 +567,7 @@ exports.tblDataPayoutSearchTables = async (tableNames, req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
 
     // Split the table names by comma and validate each one
@@ -605,6 +614,7 @@ exports.allTblDataCreditorsTran = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
     let sqlQuery = `SELECT * FROM tbldatacreditor_tran`;
     const results = await historyDb.query(sqlQuery, {
@@ -632,6 +642,7 @@ exports.allTblCreditorsValue = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
     let sqlQuery = `SELECT * FROM tblcreditorsvalue`;
     const results = await stockmasterDb.query(sqlQuery, {
@@ -659,6 +670,7 @@ exports.allTblDebtorsValue = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
     let sqlQuery = `SELECT * FROM tbldebtorsvalue`;
     const results = await stockmasterDb.query(sqlQuery, {
@@ -686,6 +698,7 @@ exports.allTblStockValue = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
     let sqlQuery = `SELECT * FROM tblstockvalues`;
     const results = await stockmasterDb.query(sqlQuery, {
@@ -714,6 +727,7 @@ exports.allTblDataDebtorsTran = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
     let sqlQuery = `SELECT * FROM tbldatadebtor_tran`;
     const results = await historyDb.query(sqlQuery, {
@@ -741,6 +755,7 @@ exports.allDepartmentsWithCategories = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
 
     // Query with LEFT JOIN to include 'MajorNo = 0' as a valid case
@@ -796,6 +811,7 @@ exports.allTblDataProducts = async (
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
 
     // Step 1: Build the count query with dynamic filters
@@ -971,6 +987,7 @@ exports.tblDataCreditorsTranSearchTables = async (tableNames, req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
 
     // Split the table names by comma and validate each one
@@ -1018,6 +1035,7 @@ exports.tblDataDebtorsTranSearchTables = async (tableNames, req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     });
 
     // Split the table names by comma and validate each one
@@ -1066,6 +1084,7 @@ exports.DebtorsCreditNotesReportSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       // Split the table names by comma and validate each one
@@ -1163,6 +1182,7 @@ exports.DebtorsDebitNotesSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       // Split the table names by comma and validate each one
@@ -1263,6 +1283,7 @@ exports.DebtorsAccountNotesSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       // Split the table names by comma and validate each one
@@ -1364,6 +1385,7 @@ exports.DebtorsPaymentNotesSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       // Split the table names by comma and validate each one
@@ -1465,6 +1487,7 @@ exports.CreditorsCreditNotesReportSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       // Split the table names by comma and validate each one
@@ -1561,6 +1584,7 @@ exports.CreditorsDebitNotesSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       // Split the table names by comma and validate each one
@@ -1660,6 +1684,7 @@ exports.CreditorsInvoicesNotesSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       // Split the table names by comma and validate each one
@@ -1759,6 +1784,7 @@ exports.CreditorsPaymentNotesSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       // Split the table names by comma and validate each one
@@ -1858,6 +1884,7 @@ exports.HistoryProductSaleByInvoiceSearchTables = (tableNames, req) => {
         serverHost: req.user.serverHost,
         serverUser: req.user.serverUser,
         serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
       });
 
       const tables = tableNames.split(",").map((name) => name.trim());
@@ -1935,7 +1962,7 @@ exports.HistoryProductSaleByInvoiceSearchTables = (tableNames, req) => {
 // CurrentDebtorsAnalysisReport
 exports.CurrentDebtorsAnalysis = async (req) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -1947,6 +1974,7 @@ exports.CurrentDebtorsAnalysis = async (req) => {
       serverHost: serverHost,
       serverUser: serverUser,
       serverPassword: serverPassword,
+      serverPort: serverPort,
     });
     let sqlQuery = `
       SELECT 
@@ -1989,7 +2017,7 @@ exports.PERVIOUSDebtorsAgeAnalysis = async (
   req
 ) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -1999,6 +2027,7 @@ exports.PERVIOUSDebtorsAgeAnalysis = async (
       serverHost: serverHost,
       serverUser: serverUser,
       serverPassword: serverPassword,
+      serverPort: serverPort,
     });
 
     // Convert previousAging to a Date object
@@ -2072,7 +2101,7 @@ exports.PERVIOUSDebtorsAgeAnalysis = async (
 
 exports.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async (req) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2082,6 +2111,7 @@ exports.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async (req) => {
       serverHost: serverHost,
       serverUser: serverUser,
       serverPassword: serverPassword,
+      serverPort: serverPort,
     });
 
     // Define the SQL query to get the required fields
@@ -2137,7 +2167,7 @@ exports.CURRENTDebtorsAgeAnalysis = async (
   req
 ) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2147,6 +2177,7 @@ exports.CURRENTDebtorsAgeAnalysis = async (
       serverHost: serverHost,
       serverUser: serverUser,
       serverPassword: serverPassword,
+      serverPort: serverPort,
     });
     // Start the base SQL query
     let sqlQuery = `
@@ -2211,7 +2242,7 @@ exports.CURRENTDebtorsAgeAnalysis = async (
 };
 exports.CURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem = async (req) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2221,6 +2252,7 @@ exports.CURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem = async (req) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     });
 
     // Define the SQL query to get only distinct required fields
@@ -2261,7 +2293,7 @@ exports.CreditorAnalysis = async (
   req
 ) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2271,6 +2303,7 @@ exports.CreditorAnalysis = async (
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     }); // Ensure correct reference
     const stockmasterDbName = stockmasterDb.getDatabaseName(); // Ensure this method is available
 
@@ -2340,7 +2373,7 @@ exports.CreditorAnalysis = async (
 };
 exports.CreditorAnalysisCmbPreviousAging = async (req) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2350,6 +2383,7 @@ exports.CreditorAnalysisCmbPreviousAging = async (req) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     });
     const stockmasterDbName = stockmasterDb.getDatabaseName();
 
@@ -2390,9 +2424,12 @@ exports.CreditorAnalysisCmbPreviousAging = async (req) => {
   }
 };
 
-exports.CURRENTCreditorsAgeAnalysis = async (checkBalanceGreaterThanZero, req) => {
+exports.CURRENTCreditorsAgeAnalysis = async (
+  checkBalanceGreaterThanZero,
+  req
+) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2402,6 +2439,7 @@ exports.CURRENTCreditorsAgeAnalysis = async (checkBalanceGreaterThanZero, req) =
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     });
     const stockmasterDbName = stockmasterDb.getDatabaseName(); // Ensure this method is available
 
@@ -2466,6 +2504,7 @@ exports.allDataMinStockLevel = async (req) => {
       serverHost: req.user.serverHost,
       serverUser: req.user.serverUser,
       serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
     }); // Ensure correct reference
     const stockmasterDbName = stockmasterDb.getDatabaseName(); // Ensure this method is available
 
@@ -2497,7 +2536,7 @@ exports.allDataMinStockLevel = async (req) => {
 exports.allDataMaxStockLevel = async (req) => {
   try {
     // Retrieve active databases
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser , serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2507,6 +2546,7 @@ exports.allDataMaxStockLevel = async (req) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     }); // Ensure correct reference
     const stockmasterDbName = stockmasterDb.getDatabaseName(); // Get the database name
 
@@ -2540,18 +2580,18 @@ exports.sixWeek = async (requestBody, req) => {
     const PB1Max = 6; // Number of weeks
 
     // Get active databases
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
     );
-    const { debtorsDb, stockmasterDb, hostDb, historyDb } =
-      getDatabasesCustom({
-        activeDatabases,
-        serverHost,
-        serverUser,
-        serverPassword,
-      });
+    const { debtorsDb, stockmasterDb, hostDb, historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
 
     if (!debtorsDb || !stockmasterDb || !hostDb || !historyDb) {
       throw new Error("Required databases not found");
@@ -2809,7 +2849,7 @@ async function fetchCurrentTranData(historyDb, startDate, weekData) {
 exports.tblcreditoritemsGroup = async (req) => {
   try {
     // Get active databases
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2819,6 +2859,7 @@ exports.tblcreditoritemsGroup = async (req) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     });
     const stockmasterDbName = stockmasterDb.getDatabaseName();
 
@@ -2847,7 +2888,7 @@ exports.tblcreditoritemsGroup = async (req) => {
 exports.saleRepCommission = async (DateFrom, DateTo, req) => {
   try {
     // Get active databases
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2857,6 +2898,7 @@ exports.saleRepCommission = async (DateFrom, DateTo, req) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     });
     const stockmasterDbName = stockmasterDb.getDatabaseName();
 
@@ -2888,7 +2930,7 @@ exports.saleRepCommission = async (DateFrom, DateTo, req) => {
 exports.saleRepCommissionByProduct = async (DateFrom, DateTo, req) => {
   try {
     // Get active databases
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2898,6 +2940,7 @@ exports.saleRepCommissionByProduct = async (DateFrom, DateTo, req) => {
       serverHost,
       serverUser,
       serverPassword,
+      serverPort,
     });
     const stockmasterDbName = stockmasterDb.getDatabaseName();
 

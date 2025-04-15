@@ -38,7 +38,7 @@ exports.findDate = async (req, res) => {
         .json({ message: "Year parameter missing in request body" });
     }
 
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     // Get the active databases
     const activeDat7abases = await databaseController.getActiveDatabases(
       req.user,
@@ -82,6 +82,7 @@ exports.findDate = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
     const stockmasterDbPrefix = stockmasterDbName; // Assuming the database name is the prefix for tables
 
@@ -120,7 +121,7 @@ exports.findDate = async (req, res) => {
 
 const getDepartmentsSalesReports = async (tableName, req, res) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -163,6 +164,7 @@ const getDepartmentsSalesReports = async (tableName, req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
     const stockmasterDbPrefix = stockmasterDbName; // Assuming the database name is the prefix for tables
 
@@ -450,7 +452,7 @@ exports.getMultipleDepartmentsSalesReports = getMultipleDepartmentsSalesReports;
 exports.findAllTblDataCurrentTranNames = async (req, res) => {
   try {
     const { shopKey } = req.query;
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       shopKey
@@ -496,12 +498,14 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
       username: serverUser,
       password: serverPassword,
       host: serverHost,
+      port: serverPort
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       username: serverUser,
       password: serverPassword,
       host: serverHost,
+      port: serverPort
     });
 
     // Execute query
@@ -524,7 +528,7 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
 exports.getCurrentGRVandGoodsRecivedNotesReports = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -567,6 +571,7 @@ exports.getCurrentGRVandGoodsRecivedNotesReports = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
 
     // Preliminary query to check if the dates are valid
@@ -667,7 +672,7 @@ exports.getCurrentGRVandGoodsRecivedNotesReports = async (req, res) => {
 
 exports.findAllTblDataAdjustment = async (req, res) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -710,12 +715,14 @@ exports.findAllTblDataAdjustment = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
 
     // Execute query
@@ -737,7 +744,7 @@ exports.findAllTblDataAdjustment = async (req, res) => {
 
 exports.getAdjustmentReport = async (req, res) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -790,6 +797,7 @@ exports.getAdjustmentReport = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
 
     // Prepare results container
@@ -851,7 +859,7 @@ exports.getAdjustmentReport = async (req, res) => {
 
 exports.findAllTblDataCashupDet = async (req, res) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -894,12 +902,14 @@ exports.findAllTblDataCashupDet = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
 
     // Execute query
@@ -921,7 +931,7 @@ exports.findAllTblDataCashupDet = async (req, res) => {
 
 exports.currentCashupReport = async (req, res) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -965,12 +975,14 @@ exports.currentCashupReport = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
     const stockmasterDb = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
 
     // Define SQL query with dynamic table names and additional fields
@@ -1054,7 +1066,7 @@ exports.currentCashupReport = async (req, res) => {
 
 exports.CachupReportByClerkReport = async (req, res) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -1098,12 +1110,14 @@ exports.CachupReportByClerkReport = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
     const stockmasterDb = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       username: serverUser,
       password: serverPassword,
+      port: serverPort
     });
 
     // Define SQL query with dynamic table names and additional fields
@@ -1916,7 +1930,7 @@ exports.HistoryProductSaleByInvoiceReport = async (req, res) => {
 
 exports.DailySalesReport = async (req, res, tableName) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -1959,12 +1973,14 @@ exports.DailySalesReport = async (req, res, tableName) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
+      port: serverPort
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       password: serverPassword,
       username: serverUser,
+      port: serverPort
     }); // Assuming the database name is the prefix for tables
 
     // SQL query with the correct database for joins
@@ -2323,7 +2339,7 @@ exports.DailySalesReport = async (req, res, tableName) => {
 
 exports.currentinvoicesReports = async (req, res) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2374,12 +2390,14 @@ exports.currentinvoicesReports = async (req, res) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
+      port: serverPort
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       password: serverPassword,
-      username: serverUser,
+      username: serverUser, 
+      port: serverPort
     }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
@@ -2435,7 +2453,7 @@ exports.currentinvoicesReports = async (req, res) => {
 
 exports.SaleInvoicesByClerkReports = async (req, res) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2486,12 +2504,14 @@ exports.SaleInvoicesByClerkReports = async (req, res) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
+      port: serverPort
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       password: serverPassword,
       username: serverUser,
+      port: serverPort
     }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
@@ -2561,7 +2581,7 @@ exports.SaleInvoicesByClerkReports = async (req, res) => {
 
 exports.InvoicesByStationReports = async (req, res) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2612,12 +2632,14 @@ exports.InvoicesByStationReports = async (req, res) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
+      port: serverPort
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       password: serverPassword,
       username: serverUser,
+      port: serverPort
     }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
@@ -2687,7 +2709,7 @@ exports.InvoicesByStationReports = async (req, res) => {
 
 exports.refundReport = async (req, res) => {
   try {
-    const { serverHost, serverPassword, serverUser } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
@@ -2738,6 +2760,7 @@ exports.refundReport = async (req, res) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
+      port: serverPort
     });
 
     // Build dynamic SQL query for multiple tables

@@ -49,6 +49,7 @@ exports.getDatabasesCustom = ({
   serverHost,
   serverUser,
   serverPassword,
+  serverPort = "3306"
 }) => {
   let historyDbName, stockmasterDbName, debtorsDbName, hostDbName;
 
@@ -89,24 +90,28 @@ exports.getDatabasesCustom = ({
     host: serverHost,
     username: serverUser,
     password: serverPassword,
+    port: serverPort
   });
   const stockmasterDb = createSequelizeInstanceCustom({
     databaseName: stockmasterDbName,
     host: serverHost,
     username: serverUser,
     password: serverPassword,
+    port: serverPort
   });
   const debtorsDb = createSequelizeInstanceCustom({
     databaseName: debtorsDbName,
     host: serverHost,
     username: serverUser,
     password: serverPassword,
+    port: serverPort
   }); // Create Sequelize instance for debtors
   const hostDb = createSequelizeInstanceCustom({
     databaseName: hostDbName,
     host: serverHost,
     username: serverUser,
     password: serverPassword,
+    port: serverPort
   }); // Create Sequelize instance for host
 
   return { historyDb, stockmasterDb, debtorsDb, hostDb }; // Return the Sequelize instances
