@@ -142,7 +142,7 @@ exports.register = async (req, res) => {
     // Respond with the new user and token
     res.status(201).json({ user: newUser, token });
   } catch (error) {
-    console.log(error)
+    console.log(error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -163,7 +163,8 @@ exports.create = async (req, res) => {
       planStartDate, // Default start date
       planEndDate, // Default end date
       gracePeriod = 0,
-      referenceNumber
+      referenceNumber,
+      role,
     } = req.body;
 
     // Hash the password
@@ -184,13 +185,14 @@ exports.create = async (req, res) => {
       planStartDate,
       planEndDate,
       gracePeriod,
-      referenceNumber
+      referenceNumber,
+      role: role || "user", // Default role if not provided
     });
 
     // Respond with the new user and token
     res.status(201).json({ user: newUser });
   } catch (error) {
-    console.log(error)
+    console.log(error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -230,7 +232,7 @@ exports.login = async (req, res) => {
       plan: user.plan,
       planStartDate: user.planStartDate,
       planEndDate: user.planEndDate,
-      referenceNumber: user?.referenceNumber || ""
+      referenceNumber: user?.referenceNumber || "",
     };
     // Check if the user is superadmin
     if (user.role === "superadmin") {
@@ -291,7 +293,7 @@ exports.getAllUsers = async (req, res) => {
         planStartDate: user.planStartDate,
         planEndDate: user.planEndDate,
         permissions: JSON.parse(user.permissions), // Use parsedPermissions or default to an empty object,
-        referenceNumber: user.referenceNumber
+        referenceNumber: user.referenceNumber,
       };
     });
 
@@ -326,7 +328,7 @@ exports.getUserById = async (req, res) => {
       serverPassword: user.serverPassword,
       serverPort: user.serverPort,
       allowedStores: JSON.parse(user.allowedStores),
-      referenceNumber: user.referenceNumber
+      referenceNumber: user.referenceNumber,
     });
   } catch (error) {
     console.error("Error fetching user by ID:", error);
