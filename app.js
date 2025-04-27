@@ -9,6 +9,7 @@ const databaseRoutes = require("./routes/databaseRoutes");
 const userRoutes = require("./routes/userRoutes");
 const planRoutes = require("./routes/planRoutes");
 const permissionRoutes = require("./routes/permissionRoute");
+const dashboardRoutes = require("./routes/dashboaordRoutes");
 const User = require("./models/user.model"); // Import the User model
 const cookieParser = require("cookie-parser");
 const dotenv = require("dotenv");
@@ -50,6 +51,7 @@ app.use("/api/database", databaseRoutes);
 app.use("/api/plan", planRoutes);
 app.use("/api/auth", userRoutes);
 app.use("/api/permission", permissionRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // Function to create admin user if not exists
 const createAdminUserIfNotExists = async () => {

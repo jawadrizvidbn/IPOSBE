@@ -82,7 +82,7 @@ exports.findDate = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = stockmasterDbName; // Assuming the database name is the prefix for tables
 
@@ -164,7 +164,7 @@ const getDepartmentsSalesReports = async (tableName, req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = stockmasterDbName; // Assuming the database name is the prefix for tables
 
@@ -457,9 +457,6 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
       req.user,
       shopKey
     );
-
-    console.log(activeDatabases);
-
     // Extract the specific databases needed
     let historyDbName, stockmasterDbName;
 
@@ -498,14 +495,14 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
       username: serverUser,
       password: serverPassword,
       host: serverHost,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       username: serverUser,
       password: serverPassword,
       host: serverHost,
-      port: serverPort
+      port: serverPort,
     });
 
     // Execute query
@@ -571,7 +568,7 @@ exports.getCurrentGRVandGoodsRecivedNotesReports = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
 
     // Preliminary query to check if the dates are valid
@@ -715,14 +712,14 @@ exports.findAllTblDataAdjustment = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
 
     // Execute query
@@ -797,7 +794,7 @@ exports.getAdjustmentReport = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
 
     // Prepare results container
@@ -902,14 +899,14 @@ exports.findAllTblDataCashupDet = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
 
     // Execute query
@@ -975,14 +972,14 @@ exports.currentCashupReport = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDb = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
 
     // Define SQL query with dynamic table names and additional fields
@@ -1110,14 +1107,14 @@ exports.CachupReportByClerkReport = async (req, res) => {
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDb = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       username: serverUser,
       password: serverPassword,
-      port: serverPort
+      port: serverPort,
     });
 
     // Define SQL query with dynamic table names and additional fields
@@ -1973,14 +1970,14 @@ exports.DailySalesReport = async (req, res, tableName) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       password: serverPassword,
       username: serverUser,
-      port: serverPort
+      port: serverPort,
     }); // Assuming the database name is the prefix for tables
 
     // SQL query with the correct database for joins
@@ -2390,14 +2387,14 @@ exports.currentinvoicesReports = async (req, res) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       password: serverPassword,
-      username: serverUser, 
-      port: serverPort
+      username: serverUser,
+      port: serverPort,
     }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
@@ -2504,14 +2501,14 @@ exports.SaleInvoicesByClerkReports = async (req, res) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       password: serverPassword,
       username: serverUser,
-      port: serverPort
+      port: serverPort,
     }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
@@ -2632,14 +2629,14 @@ exports.InvoicesByStationReports = async (req, res) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
-      port: serverPort
+      port: serverPort,
     });
     const stockmasterDbPrefix = createSequelizeInstanceCustom({
       databaseName: stockmasterDbName,
       host: serverHost,
       password: serverPassword,
       username: serverUser,
-      port: serverPort
+      port: serverPort,
     }); // Assuming the database name is the prefix for tables
 
     // Build dynamic SQL query for multiple tables
@@ -2760,7 +2757,7 @@ exports.refundReport = async (req, res) => {
       host: serverHost,
       password: serverPassword,
       username: serverUser,
-      port: serverPort
+      port: serverPort,
     });
 
     // Build dynamic SQL query for multiple tables
@@ -2856,7 +2853,9 @@ exports.GetAllPERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async (
 ) => {
   try {
     const results =
-      await reportsService.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging(req);
+      await reportsService.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging(
+        req
+      );
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -3062,7 +3061,11 @@ exports.SaleRepCommissionReport = async (req, res) => {
   }
 
   try {
-    const results = await reportsService.saleRepCommission(DateFrom, DateTo, req);
+    const results = await reportsService.saleRepCommission(
+      DateFrom,
+      DateTo,
+      req
+    );
     res
       .status(200)
       .json({ message: "Data inserted successfully", data: results });
@@ -3149,7 +3152,9 @@ exports.CurrentDebtorsStatementReport = async (req, res) => {
 exports.GetAllCurrentDeborsDetails = async (req, res) => {
   try {
     // Fetch all records
-    const results = await DebtorCurrentStatement.GetAllcurrentDebtorsDetails(req);
+    const results = await DebtorCurrentStatement.GetAllcurrentDebtorsDetails(
+      req
+    );
 
     if (results.message) {
       return res.status(404).json({ message: results.message });
@@ -3215,8 +3220,9 @@ exports.PreviousDebtorsStatementReport = async (req, res) => {
 
 exports.GetAllPerviousDeborsDetails = async (req, res) => {
   try {
-    const results =
-      await DebtorPreviousStatement.GetAllPreviousDebtorsDetails(req);
+    const results = await DebtorPreviousStatement.GetAllPreviousDebtorsDetails(
+      req
+    );
 
     // Check if no data was found
     if (!results.data || results.data.length === 0) {
@@ -3275,8 +3281,9 @@ exports.CurrentCreditorStatementReport = async (req, res) => {
 exports.GetAllCurrentCreditorDetails = async (req, res) => {
   try {
     // Fetch all records
-    const results =
-      await CreditorCurrentStatement.GetAllcurrentCreditorDetails(req);
+    const results = await CreditorCurrentStatement.GetAllcurrentCreditorDetails(
+      req
+    );
 
     if (results.message) {
       return res.status(404).json({ message: results.message });
@@ -3382,7 +3389,11 @@ exports.FinancialSummaryReport = async (req, res) => {
       return res.status(400).json({ message: "DTPFrom cannot be after DTPTo" });
     }
 
-    const results = await FinancialSummary.FinancialSummary(startDate, endDate, req);
+    const results = await FinancialSummary.FinancialSummary(
+      startDate,
+      endDate,
+      req
+    );
     res
       .status(200)
       .json({ message: "Data fetched successfully", data: results });
