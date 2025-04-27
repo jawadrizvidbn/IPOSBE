@@ -1,6 +1,6 @@
 const { QueryTypes } = require('sequelize');
 const { format, addDays } = require('date-fns');
-const { getDatabases } = require('../../utils/databaseHelper');
+const { getDatabases, getDatabasesCustom } = require('../../utils/databaseHelper');
 const databaseController = require('../../controllers/databaseController');
 
 const handleError = (message, error) => {
@@ -51,18 +51,26 @@ const queryWithRetry = async (db, tableName, reportDate, retries = 3) => {
 };
 
 // Main function to fetch financial summary data
-exports.FinancialSummary = async (startDate, endDate) => {
+exports.FinancialSummary = async (startDate, endDate, req) => {
   try {
     if (isNaN(new Date(startDate)) || isNaN(new Date(endDate))) {
       throw new Error('Invalid start or end date provided.');
     }
 
-    const activeDatabases = await databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
     if (!activeDatabases || activeDatabases.length === 0) {
       throw new Error('No active databases available.');
     }
 
-    const { stockmasterDb } = getDatabases(activeDatabases);
+    const { stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+    });
     if (!stockmasterDb) {
       throw new Error('Stockmaster database is not configured or connected.');
     }

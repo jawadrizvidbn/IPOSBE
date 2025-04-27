@@ -1,14 +1,21 @@
 // services/ReportServices/ReportServices.js
-const { getDatabases } = require('../../utils/databaseHelper'); // Adjust the path if necessary
-const { getDatabasesMultiple } = require('../../utils/databaseHelperMultiple'); // Adjust the path if necessary
-const databaseController = require("../../controllers/databaseController")
-const { QueryTypes } = require('sequelize');
-const dateFns = require('date-fns');
-const { format, getYear, getMonth,addDays } = require('date-fns');
+const {
+  getDatabases,
+  getDatabasesCustom,
+} = require("../../utils/databaseHelper"); // Adjust the path if necessary
+const { getDatabasesMultiple } = require("../../utils/databaseHelperMultiple"); // Adjust the path if necessary
+const databaseController = require("../../controllers/databaseController");
+const { QueryTypes } = require("sequelize");
+const dateFns = require("date-fns");
+const { format, getYear, getMonth, addDays } = require("date-fns");
 
-exports.findSpeficlyStaticTblDataCurrentTran = async () => {
+exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { shopKey } = req.query;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
     const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
@@ -32,42 +39,62 @@ exports.findSpeficlyStaticTblDataCurrentTran = async () => {
           ${stockmasterDbName}.tblcategory_sub2 AS w ON t.sub2no = w.Sub2No;
     `;
 
-    const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+    const results = await historyDb.query(sqlQuery, {
+      type: historyDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
-
   } catch (error) {
     throw new Error(error.message);
   }
 };
-exports.companydetailstblReg = async () => {
+exports.companydetailstblReg = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
+
     let sqlQuery = `SELECT * FROM tblreg`;
-    const results = await stockmasterDb.query(sqlQuery, { type: stockmasterDb.QueryTypes.SELECT });
+    const results = await stockmasterDb.query(sqlQuery, {
+      type: QueryTypes.SELECT,
+    });
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
+    console.log(error);
     throw new Error(error.message);
   }
 };
 
-exports.acrossReport = async (startDate, endDate) => {
+exports.acrossReport = async (startDate, endDate, req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabasesMultiple();
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDbs, stockmasterDbs } = getDatabasesMultiple(activeDatabases);
-    
+    const { historyDbs, stockmasterDbs } =
+      getDatabasesMultiple(activeDatabases);
+
     // Initialize an object to hold results with stock codes as keys
     const allResults = {};
     let grandTotalQty = 0; // Initialize a variable for the grand total
@@ -76,12 +103,14 @@ exports.acrossReport = async (startDate, endDate) => {
     for (const historyDb of historyDbs) {
       const dbName = historyDb.config.database; // Get the current database name
       // Get all tables in the current database
-      const tables = await historyDb.query("SHOW TABLES", { type: historyDb.QueryTypes.SELECT });
+      const tables = await historyDb.query("SHOW TABLES", {
+        type: historyDb.QueryTypes.SELECT,
+      });
 
       // Collect all tables matching the pattern YYYYMMtbldata_current_tran
       const matchingTables = [];
 
-      tables.forEach(table => {
+      tables.forEach((table) => {
         const tableName = Object.values(table)[0]; // Extract table name
         const match = tableName.match(/^(\d{6})tbldata_current_tran$/);
         if (match) {
@@ -93,18 +122,21 @@ exports.acrossReport = async (startDate, endDate) => {
       for (const table of matchingTables) {
         // Modify the SQL query to include date filtering if dates are provided
         let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
-        
+
         if (startDate && endDate) {
           // Validate date format
           if (new Date(startDate) > new Date(endDate)) {
-            throw new Error('Start date cannot be greater than end date');
+            throw new Error("Start date cannot be greater than end date");
           }
 
           sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
         }
-        
-        const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT,
-           timeout: 90000, replacements: { startDate, endDate }});
+
+        const results = await historyDb.query(sqlQuery, {
+          type: historyDb.QueryTypes.SELECT,
+          timeout: 90000,
+          replacements: { startDate, endDate },
+        });
         // Aggregate results
         for (const { stockcode, stockdescription, qty } of results) {
           if (!allResults[stockcode]) {
@@ -112,10 +144,11 @@ exports.acrossReport = async (startDate, endDate) => {
               stockcode,
               stockdescription,
               qtyByDb: { [dbName]: qty }, // Initialize with current database's quantity
-              totalQty: qty // Initialize total quantity
+              totalQty: qty, // Initialize total quantity
             };
           } else {
-            allResults[stockcode].qtyByDb[dbName] = (allResults[stockcode].qtyByDb[dbName] || 0) + qty; // Sum quantities for this database
+            allResults[stockcode].qtyByDb[dbName] =
+              (allResults[stockcode].qtyByDb[dbName] || 0) + qty; // Sum quantities for this database
             allResults[stockcode].totalQty += qty; // Sum total quantities
           }
           grandTotalQty += qty; // Add to the grand total
@@ -125,23 +158,23 @@ exports.acrossReport = async (startDate, endDate) => {
 
     // Check if any data was found
     if (Object.keys(allResults).length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     // Prepare final results
-    const finalResults = Object.keys(allResults).map(stockcode => {
+    const finalResults = Object.keys(allResults).map((stockcode) => {
       const { stockdescription, qtyByDb, totalQty } = allResults[stockcode];
       return {
         stockcode,
         stockdescription,
         ...qtyByDb, // Spread quantities by database
-        totalQty: parseFloat(totalQty.toFixed(2)) // Add total quantity for this stock code
+        totalQty: parseFloat(totalQty.toFixed(2)), // Add total quantity for this stock code
       };
     });
 
     // Add missing stock codes with zero quantities for each database
-    for (const dbName of historyDbs.map(db => db.config.database)) {
-      finalResults.forEach(item => {
+    for (const dbName of historyDbs.map((db) => db.config.database)) {
+      finalResults.forEach((item) => {
         if (!(dbName in item)) {
           item[dbName] = 0; // Assign 0 if the stock code is missing in the database
         }
@@ -149,9 +182,9 @@ exports.acrossReport = async (startDate, endDate) => {
     }
 
     // Round total quantities for each database
-    finalResults.forEach(item => {
-      Object.keys(item).forEach(key => {
-        if (typeof item[key] === 'number') {
+    finalResults.forEach((item) => {
+      Object.keys(item).forEach((key) => {
+        if (typeof item[key] === "number") {
           item[key] = parseFloat(item[key].toFixed(2)); // Round to 2 decimal places
         }
       });
@@ -161,24 +194,36 @@ exports.acrossReport = async (startDate, endDate) => {
 
     return {
       finalResults, // This will now include results grouped by stock codes with quantities per database
-      grandTotalQty // Include the grand total in the return value
+      grandTotalQty, // Include the grand total in the return value
     };
   } catch (error) {
     throw new Error(error.message);
   }
 };
 
-exports.allTblDataCancelTran = async () => {
+exports.allTblDataCancelTran = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
     let sqlQuery = `SELECT * FROM tbldatacancel_tran`;
-    const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+    const results = await historyDb.query(sqlQuery, {
+      type: historyDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
@@ -187,18 +232,27 @@ exports.allTblDataCancelTran = async () => {
 };
 
 // Service Function to handle multiple table names dynamically
-exports.tblDataCancelTranSearchTables = async (tableNames) => {
+exports.tblDataCancelTranSearchTables = async (tableNames, req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb } = getDatabases(activeDatabases);
+    const { historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
 
     // Split the table names by comma and validate each one
-    const tables = tableNames.split(',').map(name => name.trim());
+    const tables = tableNames.split(",").map((name) => name.trim());
 
     // Validate each table name to avoid SQL injection
-    tables.forEach(tableName => {
+    tables.forEach((tableName) => {
       if (!/^\d{6}tbldata_cancel_tran$/.test(tableName)) {
         throw new Error(`Invalid table name: ${tableName}`);
       }
@@ -210,12 +264,14 @@ exports.tblDataCancelTranSearchTables = async (tableNames) => {
     // Query each table and concatenate the results
     for (const tableName of tables) {
       let sqlQuery = `SELECT * FROM ${tableName}`;
-      const tableResults = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      const tableResults = await historyDb.query(sqlQuery, {
+        type: historyDb.QueryTypes.SELECT,
+      });
       results.push(...tableResults);
     }
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -223,17 +279,28 @@ exports.tblDataCancelTranSearchTables = async (tableNames) => {
     throw new Error(error.message);
   }
 };
-exports.allTblDataPrice = async () => {
+exports.allTblDataPrice = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
     let sqlQuery = `SELECT * FROM tbldataprice`;
-    const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+    const results = await historyDb.query(sqlQuery, {
+      type: historyDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
@@ -241,18 +308,27 @@ exports.allTblDataPrice = async () => {
   }
 };
 
-exports.tblDataPriceSearchTables = async (tableNames) => {
+exports.tblDataPriceSearchTables = async (tableNames, req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb } = getDatabases(activeDatabases);
+    const { historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
 
     // Split the table names by comma and validate each one
-    const tables = tableNames.split(',').map(name => name.trim());
+    const tables = tableNames.split(",").map((name) => name.trim());
 
     // Validate each table name to avoid SQL injection
-    tables.forEach(tableName => {
+    tables.forEach((tableName) => {
       if (!/^\d{6}tbldata_price$/.test(tableName)) {
         throw new Error(`Invalid table name: ${tableName}`);
       }
@@ -264,12 +340,14 @@ exports.tblDataPriceSearchTables = async (tableNames) => {
     // Query each table and concatenate the results
     for (const tableName of tables) {
       let sqlQuery = `SELECT * FROM ${tableName}`;
-      const tableResults = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      const tableResults = await historyDb.query(sqlQuery, {
+        type: historyDb.QueryTypes.SELECT,
+      });
       results.push(...tableResults);
     }
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -278,15 +356,28 @@ exports.tblDataPriceSearchTables = async (tableNames) => {
   }
 };
 
-exports.tblDataStockActivitySearchTables = (tableNames, stockcode = null) => {
+exports.tblDataStockActivitySearchTables = (
+  tableNames,
+  stockcode = null,
+  req
+) => {
   return new Promise(async (resolve, reject) => {
     try {
-      const activeDatabases = databaseController.getActiveDatabases();
-      const { historyDb } = getDatabases(activeDatabases);
-      const tables = tableNames.split(',').map(name => name.trim());
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
+      const tables = tableNames.split(",").map((name) => name.trim());
 
       // Validate table names
-      tables.forEach(tableName => {
+      tables.forEach((tableName) => {
         if (!/^\d{6}tbldata_stockactivity$/.test(tableName)) {
           return reject(new Error(`Invalid table name: ${tableName}`));
         }
@@ -300,9 +391,11 @@ exports.tblDataStockActivitySearchTables = (tableNames, stockcode = null) => {
         const countQuery = `
           SELECT COUNT(*) as total
           FROM ${tableName}
-          ${stockcode ? `WHERE stockcode = '${stockcode}'` : ''};`;
-        
-        const totalCountResult = await historyDb.query(countQuery, { type: historyDb.QueryTypes.SELECT });
+          ${stockcode ? `WHERE stockcode = '${stockcode}'` : ""};`;
+
+        const totalCountResult = await historyDb.query(countQuery, {
+          type: historyDb.QueryTypes.SELECT,
+        });
         const totalCount = totalCountResult[0].total;
         console.log(`Total records in ${tableName}: ${totalCount}`);
 
@@ -320,11 +413,13 @@ exports.tblDataStockActivitySearchTables = (tableNames, stockcode = null) => {
               SUM(usedincombinedqty) AS usedincombinedqty, 
               SUM(stocktakediffqty) AS stocktakediffqty
             FROM ${tableName}
-            ${stockcode ? `WHERE stockcode = '${stockcode}'` : ''}
+            ${stockcode ? `WHERE stockcode = '${stockcode}'` : ""}
             GROUP BY stockcode
             LIMIT ${limit} OFFSET ${offset};`;
 
-          const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+          const results = await historyDb.query(sqlQuery, {
+            type: historyDb.QueryTypes.SELECT,
+          });
           tableResults.push(...results);
           page++;
         }
@@ -337,12 +432,11 @@ exports.tblDataStockActivitySearchTables = (tableNames, stockcode = null) => {
       allResults = results.flat(); // Flatten results from all tables
 
       if (allResults.length === 0) {
-        return reject(new Error('No data found'));
+        return reject(new Error("No data found"));
       }
 
       // Map to limit fields in the response
-      const limitedFieldResults = allResults.map(item => {
-       
+      const limitedFieldResults = allResults.map((item) => {
         return {
           StockCode: item.stockcode,
           DateTime: item.datetime,
@@ -353,13 +447,23 @@ exports.tblDataStockActivitySearchTables = (tableNames, stockcode = null) => {
           ReceivedQty: parseFloat(item.receivedqty),
           AdjustedQty: parseFloat(item.adjustedqty),
           UsedInCombinedQty: parseFloat(item.usedincombinedqty),
-          StockTakeDiffQty: parseFloat(item.stocktakediffqty)
+          StockTakeDiffQty: parseFloat(item.stocktakediffqty),
         };
       });
 
       // Group by StockCode and StockDescription and calculate the totals for each group
       const groupedResults = limitedFieldResults.reduce((acc, item) => {
-        const { StockCode, StockDescription, OpenQty, CloseQty, SoldQty, ReceivedQty, AdjustedQty, UsedInCombinedQty, StockTakeDiffQty } = item;
+        const {
+          StockCode,
+          StockDescription,
+          OpenQty,
+          CloseQty,
+          SoldQty,
+          ReceivedQty,
+          AdjustedQty,
+          UsedInCombinedQty,
+          StockTakeDiffQty,
+        } = item;
         const key = `${StockCode}-${StockDescription}`;
         if (!acc[key]) {
           acc[key] = {
@@ -372,7 +476,7 @@ exports.tblDataStockActivitySearchTables = (tableNames, stockcode = null) => {
             AdjustedQtytotalAmount: 0,
             UsedInCombinedQtytotalAmount: 0,
             StockTakeDiffQtytotalAmount: 0,
-            transactions: []
+            transactions: [],
           };
         }
         acc[key].OpenQtytotalAmount += OpenQty;
@@ -394,52 +498,83 @@ exports.tblDataStockActivitySearchTables = (tableNames, stockcode = null) => {
     }
   });
 };
-exports.allTblPayout = async () => {
+exports.allTblPayout = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
     let sqlQuery = `SELECT * FROM tbldatapayout`;
-    const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+    const results = await historyDb.query(sqlQuery, {
+      type: historyDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
     throw new Error(error.message);
   }
 };
-exports.allTblStockActivity = async () => {
+exports.allTblStockActivity = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
     let sqlQuery = `SELECT * FROM tbldatastockactivity`;
-    const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+    const results = await historyDb.query(sqlQuery, {
+      type: historyDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
     throw new Error(error.message);
   }
 };
-exports.tblDataPayoutSearchTables = async (tableNames) => {
+exports.tblDataPayoutSearchTables = async (tableNames, req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb } = getDatabases(activeDatabases);
+    const { historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
 
     // Split the table names by comma and validate each one
-    const tables = tableNames.split(',').map(name => name.trim());
+    const tables = tableNames.split(",").map((name) => name.trim());
 
     // Validate each table name to avoid SQL injection
-    tables.forEach(tableName => {
+    tables.forEach((tableName) => {
       if (!/^\d{6}tblPayout$/.test(tableName)) {
         throw new Error(`Invalid table name: ${tableName}`);
       }
@@ -451,12 +586,14 @@ exports.tblDataPayoutSearchTables = async (tableNames) => {
     // Query each table and concatenate the results
     for (const tableName of tables) {
       let sqlQuery = `SELECT * FROM ${tableName}`;
-      const tableResults = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      const tableResults = await historyDb.query(sqlQuery, {
+        type: historyDb.QueryTypes.SELECT,
+      });
       results.push(...tableResults);
     }
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -464,98 +601,162 @@ exports.tblDataPayoutSearchTables = async (tableNames) => {
     throw new Error(error.message);
   }
 };
-exports.allTblDataCreditorsTran = async () => {
+exports.allTblDataCreditorsTran = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
     let sqlQuery = `SELECT * FROM tbldatacreditor_tran`;
-    const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+    const results = await historyDb.query(sqlQuery, {
+      type: historyDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
     throw new Error(error.message);
   }
 };
-exports.allTblCreditorsValue = async () => {
+exports.allTblCreditorsValue = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
     let sqlQuery = `SELECT * FROM tblcreditorsvalue`;
-    const results = await stockmasterDb.query(sqlQuery, { type: stockmasterDb.QueryTypes.SELECT });
+    const results = await stockmasterDb.query(sqlQuery, {
+      type: stockmasterDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
     throw new Error(error.message);
   }
 };
-exports.allTblDebtorsValue = async () => {
+exports.allTblDebtorsValue = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
     let sqlQuery = `SELECT * FROM tbldebtorsvalue`;
-    const results = await stockmasterDb.query(sqlQuery, { type: stockmasterDb.QueryTypes.SELECT });
+    const results = await stockmasterDb.query(sqlQuery, {
+      type: stockmasterDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
     throw new Error(error.message);
   }
 };
-exports.allTblStockValue = async () => {
+exports.allTblStockValue = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
     let sqlQuery = `SELECT * FROM tblstockvalues`;
-    const results = await stockmasterDb.query(sqlQuery, { type: stockmasterDb.QueryTypes.SELECT });
+    const results = await stockmasterDb.query(sqlQuery, {
+      type: stockmasterDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
     throw new Error(error.message);
   }
 };
-exports.allTblDataDebtorsTran=async ()=>{
 
+exports.allTblDataDebtorsTran = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
     let sqlQuery = `SELECT * FROM tbldatadebtor_tran`;
-    const results = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+    const results = await historyDb.query(sqlQuery, {
+      type: historyDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
     throw new Error(error.message);
   }
-}
-exports.allDepartmentsWithCategories = async () => {
+};
+exports.allDepartmentsWithCategories = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
 
     // Query with LEFT JOIN to include 'MajorNo = 0' as a valid case
     let sqlQuery = `
@@ -571,10 +772,12 @@ exports.allDepartmentsWithCategories = async () => {
       LEFT JOIN tblcategory_sub2 AS sub2 ON c.MajorNo = sub2.MajorNo AND sub1.Sub1No = sub2.Sub1No
     `;
 
-    const results = await stockmasterDb.query(sqlQuery, { type: stockmasterDb.QueryTypes.SELECT });
+    const results = await stockmasterDb.query(sqlQuery, {
+      type: stockmasterDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -582,10 +785,34 @@ exports.allDepartmentsWithCategories = async () => {
     throw new Error(error.message);
   }
 };
-exports.allTblDataProducts = async (majorNo, sub1No, sub2No, includeNegativeStockonHand = false,includeNegativeLastCostPrice = false, includeNegativeAvarageCostPrice = false, includeNegativeLaybyeStock = false,includeZeroStockonHand=false,includeZeroLastCostPrice=false,includeZeroAvarageCostPrice=false,includeZeroLaybyeStock=false,includeOnlyPositiveStock=false, pageSize = 6000) => {
+exports.allTblDataProducts = async (
+  majorNo,
+  sub1No,
+  sub2No,
+  includeNegativeStockonHand = false,
+  includeNegativeLastCostPrice = false,
+  includeNegativeAvarageCostPrice = false,
+  includeNegativeLaybyeStock = false,
+  includeZeroStockonHand = false,
+  includeZeroLastCostPrice = false,
+  includeZeroAvarageCostPrice = false,
+  includeZeroLaybyeStock = false,
+  includeOnlyPositiveStock = false,
+  pageSize = 6000,
+  req
+) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { stockmasterDb } = getDatabases(activeDatabases);
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
 
     // Step 1: Build the count query with dynamic filters
     let countQuery = `SELECT COUNT(*) AS totalCount FROM tblproducts`;
@@ -607,37 +834,39 @@ exports.allTblDataProducts = async (majorNo, sub1No, sub2No, includeNegativeStoc
 
     // Step 2: If includeNegative is true, add condition for negative StockonHand or subcategories
     if (includeNegativeStockonHand) {
-      whereConditions.push(`(tblproducts.StockonHand < 0)`); 
+      whereConditions.push(`(tblproducts.StockonHand < 0)`);
     }
     if (includeNegativeLastCostPrice) {
-      whereConditions.push(`(tblproducts.LastCostPrice < 0)`); 
-    } if (includeNegativeAvarageCostPrice) {
+      whereConditions.push(`(tblproducts.LastCostPrice < 0)`);
+    }
+    if (includeNegativeAvarageCostPrice) {
       whereConditions.push(`(tblproducts.AvarageCostPrice < 0)`);
-    } if (includeNegativeLaybyeStock) {
+    }
+    if (includeNegativeLaybyeStock) {
       whereConditions.push(`(tblproducts.LaybyeStock < 0)`);
     }
     // Check for zero stock in addition to negative checks
     if (includeZeroStockonHand) {
-        whereConditions.push(`(tblproducts.StockonHand = 0)`); 
+      whereConditions.push(`(tblproducts.StockonHand = 0)`);
     }
     if (includeZeroLastCostPrice) {
-        whereConditions.push(`(tblproducts.LastCostPrice = 0)`); 
+      whereConditions.push(`(tblproducts.LastCostPrice = 0)`);
     }
     if (includeZeroAvarageCostPrice) {
-        whereConditions.push(`(tblproducts.AvarageCostPrice = 0)`);
+      whereConditions.push(`(tblproducts.AvarageCostPrice = 0)`);
     }
     if (includeZeroLaybyeStock) {
-        whereConditions.push(`(tblproducts.LaybyeStock = 0)`);
+      whereConditions.push(`(tblproducts.LaybyeStock = 0)`);
     }
-       // New condition for only positive values
-       if (includeOnlyPositiveStock) {
-        whereConditions.push(`(tblproducts.StockonHand > 0)`);
-        whereConditions.push(`(tblproducts.LastCostPrice > 0)`);
-        whereConditions.push(`(tblproducts.AvarageCostPrice > 0)`);
-      }
-  
+    // New condition for only positive values
+    if (includeOnlyPositiveStock) {
+      whereConditions.push(`(tblproducts.StockonHand > 0)`);
+      whereConditions.push(`(tblproducts.LastCostPrice > 0)`);
+      whereConditions.push(`(tblproducts.AvarageCostPrice > 0)`);
+    }
+
     if (whereConditions.length > 0) {
-      countQuery += ` WHERE ` + whereConditions.join(' AND ');
+      countQuery += ` WHERE ` + whereConditions.join(" AND ");
     }
     const countResult = await stockmasterDb.query(countQuery, {
       replacements,
@@ -675,7 +904,7 @@ exports.allTblDataProducts = async (majorNo, sub1No, sub2No, includeNegativeStoc
       `;
 
       if (whereConditions.length > 0) {
-        productsQuery += ` WHERE ` + whereConditions.join(' AND ');
+        productsQuery += ` WHERE ` + whereConditions.join(" AND ");
       }
 
       productsQuery += ` LIMIT :pageSize OFFSET :offset`;
@@ -690,11 +919,14 @@ exports.allTblDataProducts = async (majorNo, sub1No, sub2No, includeNegativeStoc
     const allProducts = pagesResults.flat();
 
     // Process all products
-    const processedProducts = allProducts.map(product => ({
+    const processedProducts = allProducts.map((product) => ({
       ...product,
-      TotalAvarageCostPrice: Number(product.AvarageCostPrice) * Number(product.StockonHand || 0),
-      TotalLastCostPrice: Number(product.LastCostPrice) * Number(product.StockonHand || 0),
-      TotalSelling: Number(product.DefaultSellingPrice) * Number(product.StockonHand || 0),
+      TotalAvarageCostPrice:
+        Number(product.AvarageCostPrice) * Number(product.StockonHand || 0),
+      TotalLastCostPrice:
+        Number(product.LastCostPrice) * Number(product.StockonHand || 0),
+      TotalSelling:
+        Number(product.DefaultSellingPrice) * Number(product.StockonHand || 0),
     }));
 
     // Group products by MajorNo
@@ -718,8 +950,12 @@ exports.allTblDataProducts = async (majorNo, sub1No, sub2No, includeNegativeStoc
       acc[majorKey].products.push(product);
       acc[majorKey].totalStockOnHand += Number(product.StockonHand || 0);
       acc[majorKey].totalLaybyeStock += Number(product.LaybyeStock || 0);
-      acc[majorKey].totalAvarageCostPrice += Number(product.TotalAvarageCostPrice || 0);
-      acc[majorKey].totalLastCostPrice += Number(product.TotalLastCostPrice || 0);
+      acc[majorKey].totalAvarageCostPrice += Number(
+        product.TotalAvarageCostPrice || 0
+      );
+      acc[majorKey].totalLastCostPrice += Number(
+        product.TotalLastCostPrice || 0
+      );
       acc[majorKey].totalSelling += Number(product.TotalSelling || 0);
 
       return acc;
@@ -732,25 +968,33 @@ exports.allTblDataProducts = async (majorNo, sub1No, sub2No, includeNegativeStoc
       totalCount,
       pageSize,
     };
-
   } catch (error) {
     console.error(`Error fetching products data: ${error.message}`);
     console.error(`Stack Trace: ${error.stack}`); // More detailed error info
     throw new Error(`Error fetching products data: ${error.message}`);
   }
 };
-exports.tblDataCreditorsTranSearchTables = async (tableNames) => {
+exports.tblDataCreditorsTranSearchTables = async (tableNames, req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb } = getDatabases(activeDatabases);
+    const { historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
 
     // Split the table names by comma and validate each one
-    const tables = tableNames.split(',').map(name => name.trim());
+    const tables = tableNames.split(",").map((name) => name.trim());
 
     // Validate each table name to avoid SQL injection
-    tables.forEach(tableName => {
+    tables.forEach((tableName) => {
       if (!/^\d{6}tbldata_creditors_tran$/.test(tableName)) {
         throw new Error(`Invalid table name: ${tableName}`);
       }
@@ -762,12 +1006,14 @@ exports.tblDataCreditorsTranSearchTables = async (tableNames) => {
     // Query each table and concatenate the results
     for (const tableName of tables) {
       let sqlQuery = `SELECT * FROM ${tableName}`;
-      const tableResults = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      const tableResults = await historyDb.query(sqlQuery, {
+        type: historyDb.QueryTypes.SELECT,
+      });
       results.push(...tableResults);
     }
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -776,18 +1022,27 @@ exports.tblDataCreditorsTranSearchTables = async (tableNames) => {
   }
 };
 
-exports.tblDataDebtorsTranSearchTables = async (tableNames) => {
+exports.tblDataDebtorsTranSearchTables = async (tableNames, req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb } = getDatabases(activeDatabases);
+    const { historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    });
 
     // Split the table names by comma and validate each one
-    const tables = tableNames.split(',').map(name => name.trim());
+    const tables = tableNames.split(",").map((name) => name.trim());
 
     // Validate each table name to avoid SQL injection
-    tables.forEach(tableName => {
+    tables.forEach((tableName) => {
       if (!/^\d{6}tbldebtor_tran$/.test(tableName)) {
         throw new Error(`Invalid table name: ${tableName}`);
       }
@@ -799,12 +1054,14 @@ exports.tblDataDebtorsTranSearchTables = async (tableNames) => {
     // Query each table and concatenate the results
     for (const tableName of tables) {
       let sqlQuery = `SELECT * FROM ${tableName}`;
-      const tableResults = await historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      const tableResults = await historyDb.query(sqlQuery, {
+        type: historyDb.QueryTypes.SELECT,
+      });
       results.push(...tableResults);
     }
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -813,26 +1070,35 @@ exports.tblDataDebtorsTranSearchTables = async (tableNames) => {
   }
 };
 
-exports.DebtorsCreditNotesReportSearchTables = (tableNames) => {
-  return new Promise((resolve, reject) => {
+exports.DebtorsCreditNotesReportSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
     try {
-      const activeDatabases = databaseController.getActiveDatabases();
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
 
       // Get the history and stockmaster databases using the utility
-      const { historyDb } = getDatabases(activeDatabases);
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
 
       // Split the table names by comma and validate each one
-      const tables = tableNames.split(',').map(name => name.trim());
+      const tables = tableNames.split(",").map((name) => name.trim());
 
       // Validate each table name to avoid SQL injection
-      tables.forEach(tableName => {
+      tables.forEach((tableName) => {
         if (!/^\d{6}tbldebtor_tran$/.test(tableName)) {
           return reject(new Error(`Invalid table name: ${tableName}`));
         }
       });
 
       // Initialize an array to hold the promises for querying each table
-      const queryPromises = tables.map(tableName => {
+      const queryPromises = tables.map((tableName) => {
         let sqlQuery = `SELECT * FROM ${tableName}`;
         return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
       });
@@ -844,121 +1110,55 @@ exports.DebtorsCreditNotesReportSearchTables = (tableNames) => {
           const results = [].concat(...queryResults);
 
           if (results.length === 0) {
-            return reject(new Error('No data found'));
+            return reject(new Error("No data found"));
           }
 
           // Filter results where Description starts with "Credit"
-          const filteredResults = results.filter(result => result.Description.startsWith("Credit"));
+          const filteredResults = results.filter((result) =>
+            result.Description.startsWith("Credit")
+          );
 
           if (filteredResults.length === 0) {
-            return resolve({ message: 'No Credit transactions found', data: [] });
+            return resolve({
+              message: "No Credit transactions found",
+              data: [],
+            });
           }
 
-           // Map to limit fields in the response
-           const limitedFieldResults = filteredResults.map(item => ({
+          // Map to limit fields in the response
+          const limitedFieldResults = filteredResults.map((item) => ({
             DateTime: item.DateTime,
             DebtorCode: item.Debtorcode,
             Reference: item.Reference,
             Description: item.Description,
             Amount: item.Amount,
             UserName: item.UserName,
-            DebtorName: item.DebtorName
+            DebtorName: item.DebtorName,
           }));
-  
-         // Group by Creditorcode and CreditorName and calculate the total Amount for each group
-         const groupedResults = limitedFieldResults.reduce((acc, item) => {
-          const { DebtorCode, DebtorName, Amount } = item;
-          const key = `${DebtorCode}-${DebtorName}`; // Create a unique key using Creditorcode and CreditorName
-          if (!acc[key]) {
-            acc[key] = { DebtorCode, DebtorName, totalAmount: 0, transactions: [] };
-          }
-          acc[key].totalAmount += Amount;
-          acc[key].transactions.push(item);
-          return acc;
-        }, {});
-        // Calculate the overall total amount
-        const overallTotalAmount = limitedFieldResults.reduce((sum, item) => sum + item.Amount, 0);
-        // Convert the groupedResults object into an array
-        const groupedArray = Object.values(groupedResults);
-        // Resolve the result with both the grouped totals and the overall total
-        resolve({ groupedArray, overallTotalAmount });
-      })
-        .catch((error) => reject(error));
-    } catch (error) {
-      reject(new Error(error.message));
-    }
-  });
-};
-exports.DebtorsDebitNotesSearchTables = (tableNames) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const activeDatabases = databaseController.getActiveDatabases();
 
-      // Get the history and stockmaster databases using the utility
-      const { historyDb } = getDatabases(activeDatabases);
-
-      // Split the table names by comma and validate each one
-      const tables = tableNames.split(',').map(name => name.trim());
-
-      // Validate each table name to avoid SQL injection
-      tables.forEach(tableName => {
-        if (!/^\d{6}tbldebtor_tran$/.test(tableName)) {
-          return reject(new Error(`Invalid table name: ${tableName}`));
-        }
-      });
-
-      // Initialize an array to hold the promises for querying each table
-      const queryPromises = tables.map(tableName => {
-        let sqlQuery = `SELECT * FROM ${tableName}`;
-        return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
-      });
-
-      // Resolve all the query promises
-      Promise.all(queryPromises)
-        .then((queryResults) => {
-          // Flatten the array of results
-          const results = [].concat(...queryResults);
-
-          if (results.length === 0) {
-            return reject(new Error('No data found'));
-          }
-
-          // Filter results where TransType is "Debit"
-          const filteredResults = results.filter(result => result.Description.startsWith("Debit"));
-
-          if (filteredResults.length === 0) {
-            return resolve({ message: 'No Debit transactions found', data: [] });
-          }
-
-          // Map to limit fields in the response
-          const limitedFieldResults = filteredResults.map(item => ({
-            DateTime: item.DateTime,
-    DebtorCode: item.Debtorcode,
-    Reference: item.Reference,
-    Description: item.Description,
-    Amount: item.Amount,
-    UserName: item.UserName,
-    DebtorName: item.DebtorName
-          }));
-  
           // Group by Creditorcode and CreditorName and calculate the total Amount for each group
           const groupedResults = limitedFieldResults.reduce((acc, item) => {
             const { DebtorCode, DebtorName, Amount } = item;
             const key = `${DebtorCode}-${DebtorName}`; // Create a unique key using Creditorcode and CreditorName
             if (!acc[key]) {
-              acc[key] = { DebtorCode, DebtorName, totalAmount: 0, transactions: [] };
+              acc[key] = {
+                DebtorCode,
+                DebtorName,
+                totalAmount: 0,
+                transactions: [],
+              };
             }
             acc[key].totalAmount += Amount;
             acc[key].transactions.push(item);
             return acc;
           }, {});
-  
           // Calculate the overall total amount
-          const overallTotalAmount = limitedFieldResults.reduce((sum, item) => sum + item.Amount, 0);
-  
+          const overallTotalAmount = limitedFieldResults.reduce(
+            (sum, item) => sum + item.Amount,
+            0
+          );
           // Convert the groupedResults object into an array
           const groupedArray = Object.values(groupedResults);
-  
           // Resolve the result with both the grouped totals and the overall total
           resolve({ groupedArray, overallTotalAmount });
         })
@@ -968,26 +1168,35 @@ exports.DebtorsDebitNotesSearchTables = (tableNames) => {
     }
   });
 };
-exports.DebtorsAccountNotesSearchTables = (tableNames) => {
-  return new Promise((resolve, reject) => {
+exports.DebtorsDebitNotesSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
     try {
-      const activeDatabases = databaseController.getActiveDatabases();
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
 
       // Get the history and stockmaster databases using the utility
-      const { historyDb } = getDatabases(activeDatabases);
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
 
       // Split the table names by comma and validate each one
-      const tables = tableNames.split(',').map(name => name.trim());
+      const tables = tableNames.split(",").map((name) => name.trim());
 
       // Validate each table name to avoid SQL injection
-      tables.forEach(tableName => {
+      tables.forEach((tableName) => {
         if (!/^\d{6}tbldebtor_tran$/.test(tableName)) {
           return reject(new Error(`Invalid table name: ${tableName}`));
         }
       });
 
       // Initialize an array to hold the promises for querying each table
-      const queryPromises = tables.map(tableName => {
+      const queryPromises = tables.map((tableName) => {
         let sqlQuery = `SELECT * FROM ${tableName}`;
         return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
       });
@@ -999,281 +1208,58 @@ exports.DebtorsAccountNotesSearchTables = (tableNames) => {
           const results = [].concat(...queryResults);
 
           if (results.length === 0) {
-            return reject(new Error('No data found'));
-          }
-
-          // Filter results where Description starts with "Account"
-          const filteredResults = results.filter(result => result.Description.startsWith("Account"));
-
-          if (filteredResults.length === 0) {
-            return resolve({ message: 'No Account transactions found', data: [] });
-          }
-
-          // Map to limit fields in the response
-          const limitedFieldResults = filteredResults.map(item => ({
-            DateTime: item.DateTime,
-    DebtorCode: item.Debtorcode,
-    Reference: item.Reference,
-    Description: item.Description,
-    Amount: item.Amount,
-    UserName: item.UserName,
-    DebtorName: item.DebtorName
-          }));
-
-            // Group by Creditorcode and CreditorName and calculate the total Amount for each group
-            const groupedResults = limitedFieldResults.reduce((acc, item) => {
-              const { DebtorCode, DebtorName, Amount } = item;
-              const key = `${DebtorCode}-${DebtorName}`; // Create a unique key using Creditorcode and CreditorName
-              if (!acc[key]) {
-                acc[key] = { DebtorCode, DebtorName, totalAmount: 0, transactions: [] };
-              }
-              acc[key].totalAmount += Amount;
-              acc[key].transactions.push(item);
-              return acc;
-            }, {});
-    
-            // Calculate the overall total amount
-            const overallTotalAmount = limitedFieldResults.reduce((sum, item) => sum + item.Amount, 0);
-    
-            // Convert the groupedResults object into an array
-            const groupedArray = Object.values(groupedResults);
-    
-            // Resolve the result with both the grouped totals and the overall total
-            resolve({ groupedArray, overallTotalAmount });
-          })
-        .catch((error) => reject(error));
-    } catch (error) {
-      reject(new Error(error.message));
-    }
-  });
-};
-
-exports.DebtorsPaymentNotesSearchTables = (tableNames) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const activeDatabases = databaseController.getActiveDatabases();
-
-      // Get the history and stockmaster databases using the utility
-      const { historyDb } = getDatabases(activeDatabases);
-
-      // Split the table names by comma and validate each one
-      const tables = tableNames.split(',').map(name => name.trim());
-
-      // Validate each table name to avoid SQL injection
-      tables.forEach(tableName => {
-        if (!/^\d{6}tbldebtor_tran$/.test(tableName)) {
-          return reject(new Error(`Invalid table name: ${tableName}`));
-        }
-      });
-
-      // Initialize an array to hold the promises for querying each table
-      const queryPromises = tables.map(tableName => {
-        let sqlQuery = `SELECT * FROM ${tableName}`;
-        return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
-      });
-
-      // Resolve all the query promises
-      Promise.all(queryPromises)
-        .then((queryResults) => {
-          // Flatten the array of results
-          const results = [].concat(...queryResults);
-
-          if (results.length === 0) {
-            return reject(new Error('No data found'));
-          }
-
-          // Filter results where TransType is "Payment - Cash"
-          const filteredResults = results.filter(result => result.Description.startsWith("Payment - Cash"));
-
-          if (filteredResults.length === 0) {
-            return resolve({ message: 'No Account transactions found', data: [] });
-          }
-
-          // Map to limit fields in the response
-          const limitedFieldResults = filteredResults.map(item => ({
-            DateTime: item.DateTime,
-    DebtorCode: item.Debtorcode,
-    Reference: item.Reference,
-    Description: item.Description,
-    Amount: item.Amount,
-    UserName: item.UserName,
-    DebtorName: item.DebtorName
-          }));
-
-            // Group by Creditorcode and CreditorName and calculate the total Amount for each group
-            const groupedResults = limitedFieldResults.reduce((acc, item) => {
-              const { DebtorCode, DebtorName, Amount } = item;
-              const key = `${DebtorCode}-${DebtorName}`; // Create a unique key using Creditorcode and CreditorName
-              if (!acc[key]) {
-                acc[key] = { DebtorCode, DebtorName, totalAmount: 0, transactions: [] };
-              }
-              acc[key].totalAmount += Amount;
-              acc[key].transactions.push(item);
-              return acc;
-            }, {});
-    
-            // Calculate the overall total amount
-            const overallTotalAmount = limitedFieldResults.reduce((sum, item) => sum + item.Amount, 0);
-    
-            // Convert the groupedResults object into an array
-            const groupedArray = Object.values(groupedResults);
-    
-            // Resolve the result with both the grouped totals and the overall total
-            resolve({ groupedArray, overallTotalAmount });
-          })
-        .catch((error) => reject(error));
-    } catch (error) {
-      reject(new Error(error.message));
-    }
-  });
-};
-
-
-exports.CreditorsCreditNotesReportSearchTables = (tableNames) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const activeDatabases = databaseController.getActiveDatabases();
-
-      // Get the history and stockmaster databases using the utility
-      const { historyDb } = getDatabases(activeDatabases);
-
-      // Split the table names by comma and validate each one
-      const tables = tableNames.split(',').map(name => name.trim());
-
-      // Validate each table name to avoid SQL injection
-      tables.forEach(tableName => {
-        if (!/^\d{6}tbldata_creditors_tran$/.test(tableName)) {
-          return reject(new Error(`Invalid table name: ${tableName}`));
-        }
-      });
-
-      // Initialize an array to hold the promises for querying each table
-      const queryPromises = tables.map(tableName => {
-        let sqlQuery = `SELECT * FROM ${tableName}`;
-        return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
-      });
-
-      // Resolve all the query promises
-      Promise.all(queryPromises)
-        .then((queryResults) => {
-          // Flatten the array of results
-          const results = [].concat(...queryResults);
-
-          if (results.length === 0) {
-            return reject(new Error('No data found'));
-          }
-
-          // Filter results where Description starts with "Credit"
-          const filteredResults = results.filter(result => result.Description.startsWith("Credit"));
-
-          if (filteredResults.length === 0) {
-            return resolve({ message: 'No Credit transactions found', data: [] });
-          }
-           // Map to limit fields in the response
-           const limitedFieldResults = filteredResults.map(item => ({
-           
-            DateTime: item.DateTime,
-            Creditorcode: item.Creditorcode,
-            Reference: item.Reference,
-            Description: item.Description,
-            Amount: item.Amount,
-            UserName: item.UserName,
-            CreditorName: item.CreditorName
-          }));
-  
-         // Group by Creditorcode and CreditorName and calculate the total Amount for each group
-         const groupedResults = limitedFieldResults.reduce((acc, item) => {
-          const { Creditorcode, CreditorName, Amount } = item;
-          const key = `${Creditorcode}-${CreditorName}`; // Create a unique key using Creditorcode and CreditorName
-          if (!acc[key]) {
-            acc[key] = { Creditorcode, CreditorName, totalAmount: 0, transactions: [] };
-          }
-          acc[key].totalAmount += Amount;
-          acc[key].transactions.push(item);
-          return acc;
-        }, {});
-        // Calculate the overall total amount
-        const overallTotalAmount = limitedFieldResults.reduce((sum, item) => sum + item.Amount, 0);
-        // Convert the groupedResults object into an array
-        const groupedArray = Object.values(groupedResults);
-        // Resolve the result with both the grouped totals and the overall total
-        resolve({ groupedArray, overallTotalAmount });
-      })
-        .catch((error) => reject(error));
-    } catch (error) {
-      reject(new Error(error.message));
-    }
-  });
-};
-exports.CreditorsDebitNotesSearchTables = (tableNames) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const activeDatabases = databaseController.getActiveDatabases();
-
-      // Get the history and stockmaster databases using the utility
-      const { historyDb } = getDatabases(activeDatabases);
-
-      // Split the table names by comma and validate each one
-      const tables = tableNames.split(',').map(name => name.trim());
-
-      // Validate each table name to avoid SQL injection
-      tables.forEach(tableName => {
-        if (!/^\d{6}tbldata_creditors_tran$/.test(tableName)) {
-          return reject(new Error(`Invalid table name: ${tableName}`));
-        }
-      });
-
-      // Initialize an array to hold the promises for querying each table
-      const queryPromises = tables.map(tableName => {
-        let sqlQuery = `SELECT * FROM ${tableName}`;
-        return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
-      });
-
-      // Resolve all the query promises
-      Promise.all(queryPromises)
-        .then((queryResults) => {
-          // Flatten the array of results
-          const results = [].concat(...queryResults);
-
-          if (results.length === 0) {
-            return reject(new Error('No data found'));
+            return reject(new Error("No data found"));
           }
 
           // Filter results where TransType is "Debit"
-          const filteredResults = results.filter(result => result.Description.startsWith("Debit"));
+          const filteredResults = results.filter((result) =>
+            result.Description.startsWith("Debit")
+          );
 
           if (filteredResults.length === 0) {
-            return resolve({ message: 'No Debit transactions found', data: [] });
+            return resolve({
+              message: "No Debit transactions found",
+              data: [],
+            });
           }
+
           // Map to limit fields in the response
-          const limitedFieldResults = filteredResults.map(item => ({
+          const limitedFieldResults = filteredResults.map((item) => ({
             DateTime: item.DateTime,
-            Creditorcode: item.Creditorcode,
-    Reference: item.Reference,
-    Description: item.Description,
-    Amount: item.Amount,
-    UserName: item.UserName,
-    CreditorName: item.CreditorName
+            DebtorCode: item.Debtorcode,
+            Reference: item.Reference,
+            Description: item.Description,
+            Amount: item.Amount,
+            UserName: item.UserName,
+            DebtorName: item.DebtorName,
           }));
-  
+
           // Group by Creditorcode and CreditorName and calculate the total Amount for each group
           const groupedResults = limitedFieldResults.reduce((acc, item) => {
-            const { Creditorcode, CreditorName, Amount } = item;
-            const key = `${Creditorcode}-${CreditorName}`; // Create a unique key using Creditorcode and CreditorName
+            const { DebtorCode, DebtorName, Amount } = item;
+            const key = `${DebtorCode}-${DebtorName}`; // Create a unique key using Creditorcode and CreditorName
             if (!acc[key]) {
-              acc[key] = { Creditorcode, CreditorName, totalAmount: 0, transactions: [] };
+              acc[key] = {
+                DebtorCode,
+                DebtorName,
+                totalAmount: 0,
+                transactions: [],
+              };
             }
             acc[key].totalAmount += Amount;
             acc[key].transactions.push(item);
             return acc;
           }, {});
-  
+
           // Calculate the overall total amount
-          const overallTotalAmount = limitedFieldResults.reduce((sum, item) => sum + item.Amount, 0);
-  
+          const overallTotalAmount = limitedFieldResults.reduce(
+            (sum, item) => sum + item.Amount,
+            0
+          );
+
           // Convert the groupedResults object into an array
           const groupedArray = Object.values(groupedResults);
-  
+
           // Resolve the result with both the grouped totals and the overall total
           resolve({ groupedArray, overallTotalAmount });
         })
@@ -1283,26 +1269,35 @@ exports.CreditorsDebitNotesSearchTables = (tableNames) => {
     }
   });
 };
-exports.CreditorsInvoicesNotesSearchTables = (tableNames) => {
-  return new Promise((resolve, reject) => {
+exports.DebtorsAccountNotesSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
     try {
-      const activeDatabases = databaseController.getActiveDatabases();
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
 
       // Get the history and stockmaster databases using the utility
-      const { historyDb } = getDatabases(activeDatabases);
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
 
       // Split the table names by comma and validate each one
-      const tables = tableNames.split(',').map(name => name.trim());
+      const tables = tableNames.split(",").map((name) => name.trim());
 
       // Validate each table name to avoid SQL injection
-      tables.forEach(tableName => {
-        if (!/^\d{6}tbldata_creditors_tran$/.test(tableName)) {
+      tables.forEach((tableName) => {
+        if (!/^\d{6}tbldebtor_tran$/.test(tableName)) {
           return reject(new Error(`Invalid table name: ${tableName}`));
         }
       });
 
       // Initialize an array to hold the promises for querying each table
-      const queryPromises = tables.map(tableName => {
+      const queryPromises = tables.map((tableName) => {
         let sqlQuery = `SELECT * FROM ${tableName}`;
         return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
       });
@@ -1314,24 +1309,233 @@ exports.CreditorsInvoicesNotesSearchTables = (tableNames) => {
           const results = [].concat(...queryResults);
 
           if (results.length === 0) {
-            return reject(new Error('No data found'));
+            return reject(new Error("No data found"));
           }
 
           // Filter results where Description starts with "Account"
-          const filteredResults = results.filter(result => result.Description.startsWith("Account"));
+          const filteredResults = results.filter((result) =>
+            result.Description.startsWith("Account")
+          );
 
           if (filteredResults.length === 0) {
-            return resolve({ message: 'No Account transactions found', data: [] });
+            return resolve({
+              message: "No Account transactions found",
+              data: [],
+            });
+          }
+
+          // Map to limit fields in the response
+          const limitedFieldResults = filteredResults.map((item) => ({
+            DateTime: item.DateTime,
+            DebtorCode: item.Debtorcode,
+            Reference: item.Reference,
+            Description: item.Description,
+            Amount: item.Amount,
+            UserName: item.UserName,
+            DebtorName: item.DebtorName,
+          }));
+
+          // Group by Creditorcode and CreditorName and calculate the total Amount for each group
+          const groupedResults = limitedFieldResults.reduce((acc, item) => {
+            const { DebtorCode, DebtorName, Amount } = item;
+            const key = `${DebtorCode}-${DebtorName}`; // Create a unique key using Creditorcode and CreditorName
+            if (!acc[key]) {
+              acc[key] = {
+                DebtorCode,
+                DebtorName,
+                totalAmount: 0,
+                transactions: [],
+              };
+            }
+            acc[key].totalAmount += Amount;
+            acc[key].transactions.push(item);
+            return acc;
+          }, {});
+
+          // Calculate the overall total amount
+          const overallTotalAmount = limitedFieldResults.reduce(
+            (sum, item) => sum + item.Amount,
+            0
+          );
+
+          // Convert the groupedResults object into an array
+          const groupedArray = Object.values(groupedResults);
+
+          // Resolve the result with both the grouped totals and the overall total
+          resolve({ groupedArray, overallTotalAmount });
+        })
+        .catch((error) => reject(error));
+    } catch (error) {
+      reject(new Error(error.message));
+    }
+  });
+};
+
+exports.DebtorsPaymentNotesSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
+
+      // Get the history and stockmaster databases using the utility
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
+
+      // Split the table names by comma and validate each one
+      const tables = tableNames.split(",").map((name) => name.trim());
+
+      // Validate each table name to avoid SQL injection
+      tables.forEach((tableName) => {
+        if (!/^\d{6}tbldebtor_tran$/.test(tableName)) {
+          return reject(new Error(`Invalid table name: ${tableName}`));
+        }
+      });
+
+      // Initialize an array to hold the promises for querying each table
+      const queryPromises = tables.map((tableName) => {
+        let sqlQuery = `SELECT * FROM ${tableName}`;
+        return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      });
+
+      // Resolve all the query promises
+      Promise.all(queryPromises)
+        .then((queryResults) => {
+          // Flatten the array of results
+          const results = [].concat(...queryResults);
+
+          if (results.length === 0) {
+            return reject(new Error("No data found"));
+          }
+
+          // Filter results where TransType is "Payment - Cash"
+          const filteredResults = results.filter((result) =>
+            result.Description.startsWith("Payment - Cash")
+          );
+
+          if (filteredResults.length === 0) {
+            return resolve({
+              message: "No Account transactions found",
+              data: [],
+            });
+          }
+
+          // Map to limit fields in the response
+          const limitedFieldResults = filteredResults.map((item) => ({
+            DateTime: item.DateTime,
+            DebtorCode: item.Debtorcode,
+            Reference: item.Reference,
+            Description: item.Description,
+            Amount: item.Amount,
+            UserName: item.UserName,
+            DebtorName: item.DebtorName,
+          }));
+
+          // Group by Creditorcode and CreditorName and calculate the total Amount for each group
+          const groupedResults = limitedFieldResults.reduce((acc, item) => {
+            const { DebtorCode, DebtorName, Amount } = item;
+            const key = `${DebtorCode}-${DebtorName}`; // Create a unique key using Creditorcode and CreditorName
+            if (!acc[key]) {
+              acc[key] = {
+                DebtorCode,
+                DebtorName,
+                totalAmount: 0,
+                transactions: [],
+              };
+            }
+            acc[key].totalAmount += Amount;
+            acc[key].transactions.push(item);
+            return acc;
+          }, {});
+
+          // Calculate the overall total amount
+          const overallTotalAmount = limitedFieldResults.reduce(
+            (sum, item) => sum + item.Amount,
+            0
+          );
+
+          // Convert the groupedResults object into an array
+          const groupedArray = Object.values(groupedResults);
+
+          // Resolve the result with both the grouped totals and the overall total
+          resolve({ groupedArray, overallTotalAmount });
+        })
+        .catch((error) => reject(error));
+    } catch (error) {
+      reject(new Error(error.message));
+    }
+  });
+};
+
+exports.CreditorsCreditNotesReportSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
+
+      // Get the history and stockmaster databases using the utility
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
+
+      // Split the table names by comma and validate each one
+      const tables = tableNames.split(",").map((name) => name.trim());
+
+      // Validate each table name to avoid SQL injection
+      tables.forEach((tableName) => {
+        if (!/^\d{6}tbldata_creditors_tran$/.test(tableName)) {
+          return reject(new Error(`Invalid table name: ${tableName}`));
+        }
+      });
+
+      // Initialize an array to hold the promises for querying each table
+      const queryPromises = tables.map((tableName) => {
+        let sqlQuery = `SELECT * FROM ${tableName}`;
+        return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      });
+
+      // Resolve all the query promises
+      Promise.all(queryPromises)
+        .then((queryResults) => {
+          // Flatten the array of results
+          const results = [].concat(...queryResults);
+
+          if (results.length === 0) {
+            return reject(new Error("No data found"));
+          }
+
+          // Filter results where Description starts with "Credit"
+          const filteredResults = results.filter((result) =>
+            result.Description.startsWith("Credit")
+          );
+
+          if (filteredResults.length === 0) {
+            return resolve({
+              message: "No Credit transactions found",
+              data: [],
+            });
           }
           // Map to limit fields in the response
-          const limitedFieldResults = filteredResults.map(item => ({
+          const limitedFieldResults = filteredResults.map((item) => ({
             DateTime: item.DateTime,
             Creditorcode: item.Creditorcode,
             Reference: item.Reference,
             Description: item.Description,
             Amount: item.Amount,
             UserName: item.UserName,
-            CreditorName: item.CreditorName
+            CreditorName: item.CreditorName,
           }));
 
           // Group by Creditorcode and CreditorName and calculate the total Amount for each group
@@ -1339,7 +1543,109 @@ exports.CreditorsInvoicesNotesSearchTables = (tableNames) => {
             const { Creditorcode, CreditorName, Amount } = item;
             const key = `${Creditorcode}-${CreditorName}`; // Create a unique key using Creditorcode and CreditorName
             if (!acc[key]) {
-              acc[key] = { Creditorcode, CreditorName, totalAmount: 0, transactions: [] };
+              acc[key] = {
+                Creditorcode,
+                CreditorName,
+                totalAmount: 0,
+                transactions: [],
+              };
+            }
+            acc[key].totalAmount += Amount;
+            acc[key].transactions.push(item);
+            return acc;
+          }, {});
+          // Calculate the overall total amount
+          const overallTotalAmount = limitedFieldResults.reduce(
+            (sum, item) => sum + item.Amount,
+            0
+          );
+          // Convert the groupedResults object into an array
+          const groupedArray = Object.values(groupedResults);
+          // Resolve the result with both the grouped totals and the overall total
+          resolve({ groupedArray, overallTotalAmount });
+        })
+        .catch((error) => reject(error));
+    } catch (error) {
+      reject(new Error(error.message));
+    }
+  });
+};
+exports.CreditorsDebitNotesSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
+
+      // Get the history and stockmaster databases using the utility
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
+
+      // Split the table names by comma and validate each one
+      const tables = tableNames.split(",").map((name) => name.trim());
+
+      // Validate each table name to avoid SQL injection
+      tables.forEach((tableName) => {
+        if (!/^\d{6}tbldata_creditors_tran$/.test(tableName)) {
+          return reject(new Error(`Invalid table name: ${tableName}`));
+        }
+      });
+
+      // Initialize an array to hold the promises for querying each table
+      const queryPromises = tables.map((tableName) => {
+        let sqlQuery = `SELECT * FROM ${tableName}`;
+        return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      });
+
+      // Resolve all the query promises
+      Promise.all(queryPromises)
+        .then((queryResults) => {
+          // Flatten the array of results
+          const results = [].concat(...queryResults);
+
+          if (results.length === 0) {
+            return reject(new Error("No data found"));
+          }
+
+          // Filter results where TransType is "Debit"
+          const filteredResults = results.filter((result) =>
+            result.Description.startsWith("Debit")
+          );
+
+          if (filteredResults.length === 0) {
+            return resolve({
+              message: "No Debit transactions found",
+              data: [],
+            });
+          }
+          // Map to limit fields in the response
+          const limitedFieldResults = filteredResults.map((item) => ({
+            DateTime: item.DateTime,
+            Creditorcode: item.Creditorcode,
+            Reference: item.Reference,
+            Description: item.Description,
+            Amount: item.Amount,
+            UserName: item.UserName,
+            CreditorName: item.CreditorName,
+          }));
+
+          // Group by Creditorcode and CreditorName and calculate the total Amount for each group
+          const groupedResults = limitedFieldResults.reduce((acc, item) => {
+            const { Creditorcode, CreditorName, Amount } = item;
+            const key = `${Creditorcode}-${CreditorName}`; // Create a unique key using Creditorcode and CreditorName
+            if (!acc[key]) {
+              acc[key] = {
+                Creditorcode,
+                CreditorName,
+                totalAmount: 0,
+                transactions: [],
+              };
             }
             acc[key].totalAmount += Amount;
             acc[key].transactions.push(item);
@@ -1347,7 +1653,10 @@ exports.CreditorsInvoicesNotesSearchTables = (tableNames) => {
           }, {});
 
           // Calculate the overall total amount
-          const overallTotalAmount = limitedFieldResults.reduce((sum, item) => sum + item.Amount, 0);
+          const overallTotalAmount = limitedFieldResults.reduce(
+            (sum, item) => sum + item.Amount,
+            0
+          );
 
           // Convert the groupedResults object into an array
           const groupedArray = Object.values(groupedResults);
@@ -1361,26 +1670,35 @@ exports.CreditorsInvoicesNotesSearchTables = (tableNames) => {
     }
   });
 };
-exports.CreditorsPaymentNotesSearchTables = (tableNames) => {
-  return new Promise((resolve, reject) => {
+exports.CreditorsInvoicesNotesSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
     try {
-      const activeDatabases = databaseController.getActiveDatabases();
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
 
       // Get the history and stockmaster databases using the utility
-      const { historyDb } = getDatabases(activeDatabases);
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
 
       // Split the table names by comma and validate each one
-      const tables = tableNames.split(',').map(name => name.trim());
+      const tables = tableNames.split(",").map((name) => name.trim());
 
       // Validate each table name to avoid SQL injection
-      tables.forEach(tableName => {
+      tables.forEach((tableName) => {
         if (!/^\d{6}tbldata_creditors_tran$/.test(tableName)) {
           return reject(new Error(`Invalid table name: ${tableName}`));
         }
       });
 
       // Initialize an array to hold the promises for querying each table
-      const queryPromises = tables.map(tableName => {
+      const queryPromises = tables.map((tableName) => {
         let sqlQuery = `SELECT * FROM ${tableName}`;
         return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
       });
@@ -1392,48 +1710,160 @@ exports.CreditorsPaymentNotesSearchTables = (tableNames) => {
           const results = [].concat(...queryResults);
 
           if (results.length === 0) {
-            return reject(new Error('No data found'));
+            return reject(new Error("No data found"));
+          }
+
+          // Filter results where Description starts with "Account"
+          const filteredResults = results.filter((result) =>
+            result.Description.startsWith("Account")
+          );
+
+          if (filteredResults.length === 0) {
+            return resolve({
+              message: "No Account transactions found",
+              data: [],
+            });
+          }
+          // Map to limit fields in the response
+          const limitedFieldResults = filteredResults.map((item) => ({
+            DateTime: item.DateTime,
+            Creditorcode: item.Creditorcode,
+            Reference: item.Reference,
+            Description: item.Description,
+            Amount: item.Amount,
+            UserName: item.UserName,
+            CreditorName: item.CreditorName,
+          }));
+
+          // Group by Creditorcode and CreditorName and calculate the total Amount for each group
+          const groupedResults = limitedFieldResults.reduce((acc, item) => {
+            const { Creditorcode, CreditorName, Amount } = item;
+            const key = `${Creditorcode}-${CreditorName}`; // Create a unique key using Creditorcode and CreditorName
+            if (!acc[key]) {
+              acc[key] = {
+                Creditorcode,
+                CreditorName,
+                totalAmount: 0,
+                transactions: [],
+              };
+            }
+            acc[key].totalAmount += Amount;
+            acc[key].transactions.push(item);
+            return acc;
+          }, {});
+
+          // Calculate the overall total amount
+          const overallTotalAmount = limitedFieldResults.reduce(
+            (sum, item) => sum + item.Amount,
+            0
+          );
+
+          // Convert the groupedResults object into an array
+          const groupedArray = Object.values(groupedResults);
+
+          // Resolve the result with both the grouped totals and the overall total
+          resolve({ groupedArray, overallTotalAmount });
+        })
+        .catch((error) => reject(error));
+    } catch (error) {
+      reject(new Error(error.message));
+    }
+  });
+};
+exports.CreditorsPaymentNotesSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
+
+      // Get the history and stockmaster databases using the utility
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
+
+      // Split the table names by comma and validate each one
+      const tables = tableNames.split(",").map((name) => name.trim());
+
+      // Validate each table name to avoid SQL injection
+      tables.forEach((tableName) => {
+        if (!/^\d{6}tbldata_creditors_tran$/.test(tableName)) {
+          return reject(new Error(`Invalid table name: ${tableName}`));
+        }
+      });
+
+      // Initialize an array to hold the promises for querying each table
+      const queryPromises = tables.map((tableName) => {
+        let sqlQuery = `SELECT * FROM ${tableName}`;
+        return historyDb.query(sqlQuery, { type: historyDb.QueryTypes.SELECT });
+      });
+
+      // Resolve all the query promises
+      Promise.all(queryPromises)
+        .then((queryResults) => {
+          // Flatten the array of results
+          const results = [].concat(...queryResults);
+
+          if (results.length === 0) {
+            return reject(new Error("No data found"));
           }
 
           // Filter results where TransType is "Payment - Cash"
-          const filteredResults = results.filter(result => result.Description.startsWith("Payment - Cash"));
+          const filteredResults = results.filter((result) =>
+            result.Description.startsWith("Payment - Cash")
+          );
 
           if (filteredResults.length === 0) {
-            return resolve({ message: 'No Payment transactions found', data: [] });
+            return resolve({
+              message: "No Payment transactions found",
+              data: [],
+            });
           }
 
-         // Map to limit fields in the response
-         const limitedFieldResults = filteredResults.map(item => ({
-          DateTime: item.DateTime,
-          Creditorcode: item.Creditorcode,
-          Reference: item.Reference,
-          Description: item.Description,
-          Amount: item.Amount,
-          UserName: item.UserName,
-          CreditorName: item.CreditorName
-        }));
+          // Map to limit fields in the response
+          const limitedFieldResults = filteredResults.map((item) => ({
+            DateTime: item.DateTime,
+            Creditorcode: item.Creditorcode,
+            Reference: item.Reference,
+            Description: item.Description,
+            Amount: item.Amount,
+            UserName: item.UserName,
+            CreditorName: item.CreditorName,
+          }));
 
-        // Group by Creditorcode and CreditorName and calculate the total Amount for each group
-        const groupedResults = limitedFieldResults.reduce((acc, item) => {
-          const { Creditorcode, CreditorName, Amount } = item;
-          const key = `${Creditorcode}-${CreditorName}`; // Create a unique key using Creditorcode and CreditorName
-          if (!acc[key]) {
-            acc[key] = { Creditorcode, CreditorName, totalAmount: 0, transactions: [] };
-          }
-          acc[key].totalAmount += Amount;
-          acc[key].transactions.push(item);
-          return acc;
-        }, {});
+          // Group by Creditorcode and CreditorName and calculate the total Amount for each group
+          const groupedResults = limitedFieldResults.reduce((acc, item) => {
+            const { Creditorcode, CreditorName, Amount } = item;
+            const key = `${Creditorcode}-${CreditorName}`; // Create a unique key using Creditorcode and CreditorName
+            if (!acc[key]) {
+              acc[key] = {
+                Creditorcode,
+                CreditorName,
+                totalAmount: 0,
+                transactions: [],
+              };
+            }
+            acc[key].totalAmount += Amount;
+            acc[key].transactions.push(item);
+            return acc;
+          }, {});
 
-        // Calculate the overall total amount
-        const overallTotalAmount = limitedFieldResults.reduce((sum, item) => sum + item.Amount, 0);
+          // Calculate the overall total amount
+          const overallTotalAmount = limitedFieldResults.reduce(
+            (sum, item) => sum + item.Amount,
+            0
+          );
 
-        // Convert the groupedResults object into an array
-        const groupedArray = Object.values(groupedResults);
+          // Convert the groupedResults object into an array
+          const groupedArray = Object.values(groupedResults);
 
-        // Resolve the result with both the grouped totals and the overall total
-        resolve({ groupedArray, overallTotalAmount });
-     
+          // Resolve the result with both the grouped totals and the overall total
+          resolve({ groupedArray, overallTotalAmount });
         })
         .catch((error) => reject(error));
     } catch (error) {
@@ -1442,22 +1872,31 @@ exports.CreditorsPaymentNotesSearchTables = (tableNames) => {
   });
 };
 
-exports.HistoryProductSaleByInvoiceSearchTables = (tableNames) => { 
-  return new Promise((resolve, reject) => {
+exports.HistoryProductSaleByInvoiceSearchTables = (tableNames, req) => {
+  return new Promise(async (resolve, reject) => {
     try {
-      const activeDatabases = databaseController.getActiveDatabases();
-      const { historyDb } = getDatabases(activeDatabases);
+      const activeDatabases = await databaseController.getActiveDatabases(
+        req.user,
+        req.query.shopKey
+      );
+      const { historyDb } = getDatabasesCustom({
+        activeDatabases,
+        serverHost: req.user.serverHost,
+        serverUser: req.user.serverUser,
+        serverPassword: req.user.serverPassword,
+        serverPort: req.user.serverPort,
+      });
 
-      const tables = tableNames.split(',').map(name => name.trim());
+      const tables = tableNames.split(",").map((name) => name.trim());
 
       // Validate each table name
-      tables.forEach(tableName => {
+      tables.forEach((tableName) => {
         if (!/^\d{6}tbldata_current_tran$/.test(tableName)) {
           return reject(new Error(`Invalid table name: ${tableName}`));
         }
       });
 
-      const queryPromises = tables.map(tableName => {
+      const queryPromises = tables.map((tableName) => {
         let sqlQuery = `
         SELECT 
           datetime, 
@@ -1480,7 +1919,7 @@ exports.HistoryProductSaleByInvoiceSearchTables = (tableNames) => {
           const results = [].concat(...queryResults);
 
           if (results.length === 0) {
-            return reject(new Error('No data found'));
+            return reject(new Error("No data found"));
           }
 
           // Group results by salenum and calculate totals
@@ -1488,13 +1927,13 @@ exports.HistoryProductSaleByInvoiceSearchTables = (tableNames) => {
             const { salenum, linetotal } = current; // assuming linetotal is the field to sum
 
             if (!acc[salenum]) {
-              acc[salenum] = { 
-                salenum, 
-                transactions: [], 
-                total: 0 // Initialize total
+              acc[salenum] = {
+                salenum,
+                transactions: [],
+                total: 0, // Initialize total
               };
             }
-            
+
             acc[salenum].transactions.push(current);
             acc[salenum].total += linetotal; // Accumulate total
 
@@ -1505,7 +1944,10 @@ exports.HistoryProductSaleByInvoiceSearchTables = (tableNames) => {
           const finalResults = Object.values(groupedResults);
 
           // Calculate overall total
-          const overallTotal = finalResults.reduce((sum, group) => sum + group.total, 0);
+          const overallTotal = finalResults.reduce(
+            (sum, group) => sum + group.total,
+            0
+          );
 
           // Resolve with final results and overall total
           resolve({ finalResults, overallTotal });
@@ -1518,12 +1960,22 @@ exports.HistoryProductSaleByInvoiceSearchTables = (tableNames) => {
 };
 
 // CurrentDebtorsAnalysisReport
-exports.CurrentDebtorsAnalysis = async () => {
+exports.CurrentDebtorsAnalysis = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
 
     // Get the history and stockmaster databases using the utility
-    const { historyDb, stockmasterDb, debtorsDb } = getDatabases(activeDatabases);
+    const { historyDb, stockmasterDb, debtorsDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: serverHost,
+      serverUser: serverUser,
+      serverPassword: serverPassword,
+      serverPort: serverPort,
+    });
     let sqlQuery = `
       SELECT 
         debtorcode, 
@@ -1545,10 +1997,12 @@ exports.CurrentDebtorsAnalysis = async () => {
       WHERE 
         accountsystem = 'Normal'
     `;
-    const results = await debtorsDb.query(sqlQuery, { type: debtorsDb.QueryTypes.SELECT });
+    const results = await debtorsDb.query(sqlQuery, {
+      type: debtorsDb.QueryTypes.SELECT,
+    });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
     return results;
   } catch (error) {
@@ -1556,15 +2010,30 @@ exports.CurrentDebtorsAnalysis = async () => {
   }
 };
 
-exports.PERVIOUSDebtorsAgeAnalysis = async (debtorGroup, previousAging, checkBalanceGreaterthanZero) => {
+exports.PERVIOUSDebtorsAgeAnalysis = async (
+  debtorGroup,
+  previousAging,
+  checkBalanceGreaterthanZero,
+  req
+) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { historyDb, stockmasterDb, debtorsDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { historyDb, stockmasterDb, debtorsDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: serverHost,
+      serverUser: serverUser,
+      serverPassword: serverPassword,
+      serverPort: serverPort,
+    });
 
     // Convert previousAging to a Date object
     const previousAgingDate = new Date(previousAging);
     if (isNaN(previousAgingDate)) {
-      throw new Error('Invalid date provided for previousAging');
+      throw new Error("Invalid date provided for previousAging");
     }
 
     // Define the SQL query
@@ -1600,9 +2069,9 @@ exports.PERVIOUSDebtorsAgeAnalysis = async (debtorGroup, previousAging, checkBal
         AND tblageinfo.currentagedate = :previousAging 
     `;
 
-// Add the balance check if checkBalanceGreaterthanZero is true
-if (checkBalanceGreaterthanZero) {
-  sqlQuery += `
+    // Add the balance check if checkBalanceGreaterthanZero is true
+    if (checkBalanceGreaterthanZero) {
+      sqlQuery += `
      AND (tblageinfo.currentbalance + 
              tblageinfo.30days + 
              tblageinfo.60days + 
@@ -1610,17 +2079,18 @@ if (checkBalanceGreaterthanZero) {
              tblageinfo.120days + 
              tblageinfo.150days + 
              tblageinfo.180days) <> 0
-  `;}
+  `;
+    }
     const results = await debtorsDb.query(sqlQuery, {
       type: debtorsDb.QueryTypes.SELECT,
       replacements: {
         debtorGroup,
-        previousAging: dateFns.format(previousAgingDate, "yyyy-MM-dd HH:mm:ss") // Format the date
-      }
+        previousAging: dateFns.format(previousAgingDate, "yyyy-MM-dd HH:mm:ss"), // Format the date
+      },
     });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -1629,10 +2099,20 @@ if (checkBalanceGreaterthanZero) {
   }
 };
 
-exports.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async () => {
+exports.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: serverHost,
+      serverUser: serverUser,
+      serverPassword: serverPassword,
+      serverPort: serverPort,
+    });
 
     // Define the SQL query to get the required fields
     const sqlQuery = `
@@ -1650,7 +2130,7 @@ exports.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async () => {
     });
 
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     // Grouping the results by ACCTERMS
@@ -1662,7 +2142,7 @@ exports.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async () => {
         if (!acc[terms]) {
           acc[terms] = {
             ACCTERMS: terms,
-            currentagedates: []
+            currentagedates: [],
           };
         }
         acc[terms].currentagedates.push(item.currentagedate);
@@ -1680,10 +2160,25 @@ exports.PERVIOUSDebtorsAgeAnalysisGroupsAndPreviousAging = async () => {
   }
 };
 
-exports.CURRENTDebtorsAgeAnalysis = async (debtorGroup = null, previousAging = null, checkBalanceGreaterthanZero = true) => {
+exports.CURRENTDebtorsAgeAnalysis = async (
+  debtorGroup = null,
+  previousAging = null,
+  checkBalanceGreaterthanZero = true,
+  req
+) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: serverHost,
+      serverUser: serverUser,
+      serverPassword: serverPassword,
+      serverPort: serverPort,
+    });
     // Start the base SQL query
     let sqlQuery = `
       SELECT 
@@ -1715,12 +2210,14 @@ exports.CURRENTDebtorsAgeAnalysis = async (debtorGroup = null, previousAging = n
       conditions.push(`ACCTERMS = :previousAging`);
     }
     if (checkBalanceGreaterthanZero) {
-      conditions.push(`(currentbalance + 30days + 60days + 90days + 120days + 150days + 180days) <> 0`);
+      conditions.push(
+        `(currentbalance + 30days + 60days + 90days + 120days + 150days + 180days) <> 0`
+      );
     }
 
     // Append conditions to the SQL query if any exist
     if (conditions.length > 0) {
-      sqlQuery += ' WHERE ' + conditions.join(' AND ');
+      sqlQuery += " WHERE " + conditions.join(" AND ");
     }
 
     // Execute the query
@@ -1728,13 +2225,13 @@ exports.CURRENTDebtorsAgeAnalysis = async (debtorGroup = null, previousAging = n
       type: debtorsDb.QueryTypes.SELECT,
       replacements: {
         debtorGroup,
-        previousAging
-      }
+        previousAging,
+      },
     });
 
     // Check if any results were returned
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -1743,10 +2240,20 @@ exports.CURRENTDebtorsAgeAnalysis = async (debtorGroup = null, previousAging = n
     throw new Error(error.message);
   }
 };
-exports.CURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem = async () => {  
+exports.CURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
 
     // Define the SQL query to get only distinct required fields
     const sqlQuery = `
@@ -1764,12 +2271,14 @@ exports.CURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem = async () => {
 
     // Check if any results were returned
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     // Filter out entries with empty ACCTERMS and get unique results
     const uniqueResults = Array.from(
-      new Set(results.filter(item => item.ACCTERMS !== "").map(JSON.stringify))
+      new Set(
+        results.filter((item) => item.ACCTERMS !== "").map(JSON.stringify)
+      )
     ).map(JSON.parse);
 
     return uniqueResults;
@@ -1778,10 +2287,24 @@ exports.CURRENTDebtorsAgeAnalysisACCTERMSAndAccountSystem = async () => {
   }
 };
 
-exports.CreditorAnalysis = async (CmbPreviousAging, checkBalanceGreaterThanZero) => { 
+exports.CreditorAnalysis = async (
+  CmbPreviousAging,
+  checkBalanceGreaterThanZero,
+  req
+) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb, stockmasterDb } = getDatabases(activeDatabases); // Ensure correct reference
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    }); // Ensure correct reference
     const stockmasterDbName = stockmasterDb.getDatabaseName(); // Ensure this method is available
 
     // Start defining the SQL query
@@ -1814,7 +2337,10 @@ exports.CreditorAnalysis = async (CmbPreviousAging, checkBalanceGreaterThanZero)
       ON 
         tblageinfo.creditorcode = tblcreditor.creditorcode 
       WHERE 
-        tblageinfo.currentagedate = '${format(new Date(CmbPreviousAging), "yyyy-MM-dd HH:mm:ss")}' 
+        tblageinfo.currentagedate = '${format(
+          new Date(CmbPreviousAging),
+          "yyyy-MM-dd HH:mm:ss"
+        )}' 
     `;
 
     // Add the conditional check for balance if requested
@@ -1837,7 +2363,7 @@ exports.CreditorAnalysis = async (CmbPreviousAging, checkBalanceGreaterThanZero)
 
     // Check if any results were returned
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -1845,10 +2371,20 @@ exports.CreditorAnalysis = async (CmbPreviousAging, checkBalanceGreaterThanZero)
     throw new Error(error.message);
   }
 };
-exports.CreditorAnalysisCmbPreviousAging = async () => {   
+exports.CreditorAnalysisCmbPreviousAging = async (req) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb, stockmasterDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
     const stockmasterDbName = stockmasterDb.getDatabaseName();
 
     // SQL query to retrieve currentagedate
@@ -1866,19 +2402,19 @@ exports.CreditorAnalysisCmbPreviousAging = async () => {
 
     // Check if any results were returned
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     // Remove duplicates using an object
     const uniqueDates = {};
-    results.forEach(item => {
+    results.forEach((item) => {
       uniqueDates[item.currentagedate] = true;
     });
 
     // Convert to desired format YYYY-MM-DD HH:mm:ss
-    const formattedResults = Object.keys(uniqueDates).map(dateString => {
+    const formattedResults = Object.keys(uniqueDates).map((dateString) => {
       const date = new Date(dateString);
-      const formattedDate = date.toISOString().slice(0, 19).replace('T', ' ');
+      const formattedDate = date.toISOString().slice(0, 19).replace("T", " ");
       return { currentagedate: formattedDate };
     });
 
@@ -1888,11 +2424,23 @@ exports.CreditorAnalysisCmbPreviousAging = async () => {
   }
 };
 
-
-exports.CURRENTCreditorsAgeAnalysis = async (checkBalanceGreaterThanZero) => { 
+exports.CURRENTCreditorsAgeAnalysis = async (
+  checkBalanceGreaterThanZero,
+  req
+) => {
   try {
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb, stockmasterDb } = getDatabases(activeDatabases); // Ensure correct reference
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
     const stockmasterDbName = stockmasterDb.getDatabaseName(); // Ensure this method is available
 
     // Start defining the SQL query
@@ -1936,7 +2484,7 @@ exports.CURRENTCreditorsAgeAnalysis = async (checkBalanceGreaterThanZero) => {
 
     // Check if any results were returned
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     return results;
@@ -1944,11 +2492,20 @@ exports.CURRENTCreditorsAgeAnalysis = async (checkBalanceGreaterThanZero) => {
     throw new Error(error.message);
   }
 };
-exports.allDataMinStockLevel = async () => { 
+exports.allDataMinStockLevel = async (req) => {
   try {
     // Retrieve active databases
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb, stockmasterDb } = getDatabases(activeDatabases); // Ensure correct reference
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+      serverPort: req.user.serverPort,
+    }); // Ensure correct reference
     const stockmasterDbName = stockmasterDb.getDatabaseName(); // Ensure this method is available
 
     // Define the SQL query to find products with a minimum stock level not equal to 0 and stock on hand less than minimum stock
@@ -1966,7 +2523,7 @@ exports.allDataMinStockLevel = async () => {
 
     // Check if any results were returned
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     // Return the results
@@ -1976,11 +2533,21 @@ exports.allDataMinStockLevel = async () => {
     throw new Error(error.message);
   }
 };
-exports.allDataMaxStockLevel = async () => { 
+exports.allDataMaxStockLevel = async (req) => {
   try {
     // Retrieve active databases
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb, stockmasterDb } = getDatabases(activeDatabases); // Ensure correct reference
+    const { serverHost, serverPassword, serverUser , serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb, stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    }); // Ensure correct reference
     const stockmasterDbName = stockmasterDb.getDatabaseName(); // Get the database name
 
     // Define the SQL query to find products with a maximum stock level not equal to 0 and stock on hand less than maximum stock
@@ -1998,7 +2565,7 @@ exports.allDataMaxStockLevel = async () => {
 
     // Check if any results were returned
     if (results.length === 0) {
-      throw new Error('No data found');
+      throw new Error("No data found");
     }
 
     // Return the results
@@ -2008,42 +2575,72 @@ exports.allDataMaxStockLevel = async () => {
     throw new Error(error.message);
   }
 };
-exports.sixWeek = async (requestBody) => {
+exports.sixWeek = async (requestBody, req) => {
   try {
     const PB1Max = 6; // Number of weeks
 
     // Get active databases
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { debtorsDb, stockmasterDb, hostDb, historyDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb, stockmasterDb, hostDb, historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
 
     if (!debtorsDb || !stockmasterDb || !hostDb || !historyDb) {
-      throw new Error('Required databases not found');
+      throw new Error("Required databases not found");
     }
 
-    const { OptSupplier, OptCategory, txtSupplierCode, txtCategoryNo, txtSub1No, txtSub2No, startDate } = requestBody;
-    
+    const {
+      OptSupplier,
+      OptCategory,
+      txtSupplierCode,
+      txtCategoryNo,
+      txtSub1No,
+      txtSub2No,
+      startDate,
+    } = requestBody;
+
     // Ensure startDate is parsed as a Date object
     const start = new Date(startDate);
     if (isNaN(start.getTime())) {
-      throw new Error('Invalid startDate format');
+      throw new Error("Invalid startDate format");
     }
-    console.log(`Start Date for Week Calculation: ${start.toISOString().split('T')[0]}`);
+    console.log(
+      `Start Date for Week Calculation: ${start.toISOString().split("T")[0]}`
+    );
 
     // Calculate the start date for 6 weeks prior to the given startDate
     const previousStartDate = new Date(start);
-    previousStartDate.setDate(previousStartDate.getDate() - (PB1Max * 7)); // 6 weeks back
-    console.log(`Start Date for Previous 6 Weeks: ${previousStartDate.toISOString().split('T')[0]}`);
+    previousStartDate.setDate(previousStartDate.getDate() - PB1Max * 7); // 6 weeks back
+    console.log(
+      `Start Date for Previous 6 Weeks: ${
+        previousStartDate.toISOString().split("T")[0]
+      }`
+    );
 
     let data = null;
     if (OptSupplier) {
-      data = await fetchData(stockmasterDb, 'supplier', txtSupplierCode);
+      data = await fetchData(stockmasterDb, "supplier", txtSupplierCode);
     } else if (OptCategory) {
-      data = await fetchData(stockmasterDb, 'category', txtCategoryNo, txtSub1No, txtSub2No);
+      data = await fetchData(
+        stockmasterDb,
+        "category",
+        txtCategoryNo,
+        txtSub1No,
+        txtSub2No
+      );
     }
 
     // Create a map for unique stockcodes with initial week data
     const stockcodeMap = new Map();
-    data.forEach(item => {
+    data.forEach((item) => {
       if (!stockcodeMap.has(item.stockcode)) {
         stockcodeMap.set(item.stockcode, {
           ...item,
@@ -2052,23 +2649,27 @@ exports.sixWeek = async (requestBody) => {
           week3: 0,
           week4: 0,
           week5: 0,
-          week6: 0
+          week6: 0,
         });
       }
     });
 
-    const weekData = generateWeekData(previousStartDate);  // Generate previous 6 weeks
+    const weekData = generateWeekData(previousStartDate); // Generate previous 6 weeks
     console.log(`Start Date of Week 1: ${weekData[0].startDate}`);
     console.log(`End Date of Week 6: ${weekData[5].endDate}`);
 
     // Fetch current transaction data
-    const currentTranData = await fetchCurrentTranData(historyDb, startDate, weekData);
-    console.log('Fetched currentTranData:', currentTranData);
+    const currentTranData = await fetchCurrentTranData(
+      historyDb,
+      startDate,
+      weekData
+    );
+    console.log("Fetched currentTranData:", currentTranData);
 
     // Adjusted loop for handling nested week structure in currentTranData
-    if (typeof currentTranData === 'object' && currentTranData !== null) {
+    if (typeof currentTranData === "object" && currentTranData !== null) {
       for (const [weekKey, weekData] of Object.entries(currentTranData)) {
-        const weekNumber = weekKey.replace('week', ''); // Extract week number, e.g., "1", "2", etc.
+        const weekNumber = weekKey.replace("week", ""); // Extract week number, e.g., "1", "2", etc.
 
         for (const [stockcode, value] of Object.entries(weekData)) {
           if (stockcodeMap.has(stockcode)) {
@@ -2077,32 +2678,38 @@ exports.sixWeek = async (requestBody) => {
         }
       }
     } else {
-      console.error('Error: currentTranData has unexpected structure:', currentTranData);
-      throw new Error('Unexpected data format for currentTranData');
+      console.error(
+        "Error: currentTranData has unexpected structure:",
+        currentTranData
+      );
+      throw new Error("Unexpected data format for currentTranData");
     }
 
     // Convert the map back to an array format for the response
     const results = Array.from(stockcodeMap.values());
 
     return {
-      startDate: previousStartDate.toISOString().split('T')[0],  // Show previous start date
-      endDate: start.toISOString().split('T')[0],  // Keep the provided start date as the end date
-      data: results
+      startDate: previousStartDate.toISOString().split("T")[0], // Show previous start date
+      endDate: start.toISOString().split("T")[0], // Keep the provided start date as the end date
+      data: results,
     };
   } catch (error) {
-    console.error('Error in sixWeek function:', error);
+    console.error("Error in sixWeek function:", error);
     throw error;
   }
 };
 
-
-
-
-async function fetchData(stockmasterDb, type, code, sub1No = null, sub2No = null) {
+async function fetchData(
+  stockmasterDb,
+  type,
+  code,
+  sub1No = null,
+  sub2No = null
+) {
   const stockmasterDbName = stockmasterDb.getDatabaseName();
-  let query = '';
+  let query = "";
 
-  if (type === 'supplier') {
+  if (type === "supplier") {
     query = `
       SELECT 
         c.creditorcode, 
@@ -2123,7 +2730,7 @@ async function fetchData(stockmasterDb, type, code, sub1No = null, sub2No = null
         ON p.stockcode = c.stockcode
       WHERE c.creditorcode = :code
     `;
-  } else if (type === 'category') {
+  } else if (type === "category") {
     query = `
       SELECT 
         '0' AS creditorcode, 
@@ -2148,7 +2755,7 @@ async function fetchData(stockmasterDb, type, code, sub1No = null, sub2No = null
 
   return stockmasterDb.query(query, {
     type: QueryTypes.SELECT,
-    replacements: { code, sub1No, sub2No }
+    replacements: { code, sub1No, sub2No },
   });
 }
 
@@ -2176,22 +2783,26 @@ async function fetchCurrentTranData(historyDb, startDate, weekData) {
       week3: {},
       week4: {},
       week5: {},
-      week6: {}
+      week6: {},
     };
 
     const startYear = getYear(new Date(startDate));
-    const tables = await historyDb.query('SHOW TABLES', { type: QueryTypes.SELECT });
-    const matchingTables = tables.filter(table => {
-      const tableName = table['Tables_in_' + historyDb.getDatabaseName()];
+    const tables = await historyDb.query("SHOW TABLES", {
+      type: QueryTypes.SELECT,
+    });
+    const matchingTables = tables.filter((table) => {
+      const tableName = table["Tables_in_" + historyDb.getDatabaseName()];
       const tableYearMonthMatch = tableName.match(/(\d{6})/);
 
       if (tableYearMonthMatch) {
         const tableYear = parseInt(tableYearMonthMatch[0].slice(0, 4), 10);
         const tableMonth = parseInt(tableYearMonthMatch[0].slice(4, 6), 10);
-        return tableName.endsWith('tbldata_current_tran') &&
-               tableYear === startYear &&
-               tableMonth >= getMonth(new Date(startDate)) + 1 &&
-               tableMonth <= getMonth(new Date(lastEndDate)) + 1;
+        return (
+          tableName.endsWith("tbldata_current_tran") &&
+          tableYear === startYear &&
+          tableMonth >= getMonth(new Date(startDate)) + 1 &&
+          tableMonth <= getMonth(new Date(lastEndDate)) + 1
+        );
       }
       return false;
     });
@@ -2201,7 +2812,7 @@ async function fetchCurrentTranData(historyDb, startDate, weekData) {
     }
 
     for (const table of matchingTables) {
-      const tableName = table['Tables_in_' + historyDb.getDatabaseName()];
+      const tableName = table["Tables_in_" + historyDb.getDatabaseName()];
 
       for (let i = 0; i < 6; i++) {
         const { startDate: weekStartDate, endDate: weekEndDate } = weekData[i];
@@ -2215,7 +2826,7 @@ async function fetchCurrentTranData(historyDb, startDate, weekData) {
 
         const results = await historyDb.query(query, {
           replacements: { startDate: weekStartDate, endDate: weekEndDate },
-          type: QueryTypes.SELECT
+          type: QueryTypes.SELECT,
         });
 
         results.forEach((row) => {
@@ -2229,18 +2840,27 @@ async function fetchCurrentTranData(historyDb, startDate, weekData) {
     }
 
     return stockQuantities;
-
   } catch (error) {
-    console.error('Error fetching transaction data:', error.message);
+    console.error("Error fetching transaction data:", error.message);
     throw error;
   }
 }
 
-exports.tblcreditoritemsGroup = async () => {
+exports.tblcreditoritemsGroup = async (req) => {
   try {
     // Get active databases
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { stockmasterDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
     const stockmasterDbName = stockmasterDb.getDatabaseName();
 
     // Fetch only unique CreditorName and CreditorCode
@@ -2252,23 +2872,34 @@ exports.tblcreditoritemsGroup = async () => {
     });
 
     if (productDataToReturn.length === 0) {
-      throw new Error('No product data found.');
+      throw new Error("No product data found.");
     }
 
-    console.log(`Fetched ${productDataToReturn.length} unique product records.`);
+    console.log(
+      `Fetched ${productDataToReturn.length} unique product records.`
+    );
     return productDataToReturn; // Return unique product data
-
   } catch (error) {
-    console.error('Error fetching product data:', error.message);
+    console.error("Error fetching product data:", error.message);
     throw new Error(`Error during product data retrieval: ${error.message}`);
   }
 };
 
-exports.saleRepCommission = async (DateFrom, DateTo) => {
+exports.saleRepCommission = async (DateFrom, DateTo, req) => {
   try {
     // Get active databases
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { stockmasterDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
     const stockmasterDbName = stockmasterDb.getDatabaseName();
 
     // Fetch the data to be returned
@@ -2276,32 +2907,41 @@ exports.saleRepCommission = async (DateFrom, DateTo) => {
       SELECT * FROM ${stockmasterDbName}.tbldata_salesrep
       WHERE ${stockmasterDbName}.tbldata_salesrep.datetime BETWEEN :dateFrom AND :dateTo
     `;
-    
+
     const dataToReturn = await stockmasterDb.query(selectQuery, {
       type: QueryTypes.SELECT,
       replacements: {
         dateFrom: DateFrom,
-        dateTo: DateTo
-      }
+        dateTo: DateTo,
+      },
     });
 
     if (dataToReturn.length === 0) {
-      throw new Error('No data found for the specified date range.');
+      throw new Error("No data found for the specified date range.");
     }
 
     console.log(`Fetched ${dataToReturn.length} records.`);
     return dataToReturn; // Return the fetched data
-
   } catch (error) {
-    console.error('Error fetching data:', error.message);
+    console.error("Error fetching data:", error.message);
     throw new Error(`Error during data retrieval: ${error.message}`);
   }
 };
-exports.saleRepCommissionByProduct = async (DateFrom, DateTo) => {
+exports.saleRepCommissionByProduct = async (DateFrom, DateTo, req) => {
   try {
     // Get active databases
-    const activeDatabases = databaseController.getActiveDatabases();
-    const { stockmasterDb } = getDatabases(activeDatabases);
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { stockmasterDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+      serverPort,
+    });
     const stockmasterDbName = stockmasterDb.getDatabaseName();
 
     // Fetch commission data by product
@@ -2314,22 +2954,18 @@ exports.saleRepCommissionByProduct = async (DateFrom, DateTo) => {
       type: QueryTypes.SELECT,
       replacements: {
         dateFrom: DateFrom,
-        dateTo: DateTo
-      }
+        dateTo: DateTo,
+      },
     });
 
     if (productDataToReturn.length === 0) {
-      throw new Error('No product data found for the specified date range.');
+      throw new Error("No product data found for the specified date range.");
     }
 
     console.log(`Fetched ${productDataToReturn.length} product records.`);
     return productDataToReturn; // Return product data
-
   } catch (error) {
-    console.error('Error fetching product data:', error.message);
+    console.error("Error fetching product data:", error.message);
     throw new Error(`Error during product data retrieval: ${error.message}`);
   }
 };
-
-
-

@@ -1,4 +1,4 @@
-const { getDatabases } = require('../../utils/databaseHelper');
+const { getDatabases, getDatabasesCustom } = require('../../utils/databaseHelper');
 const databaseController = require("../../controllers/databaseController");
 const { QueryTypes } = require('sequelize');
 const { format, getYear, getMonth, isValid } = require('date-fns');
@@ -64,11 +64,19 @@ const insertHistoryRecords = async (debtorsDb, historyRecords, debtorRecord) => 
   return { currentBalance, current, days30, days60, days90, days120, days150, days180, recordsToInsert };
 };
 
-exports.previousDebtorsStatement = async (cmbCode, startDate, endDate) => {
+exports.previousDebtorsStatement = async (cmbCode, startDate, endDate, req) => {
   try {
     // Get active databases
-    const activeDatabases = await databaseController.getActiveDatabases();
-    const { debtorsDb, historyDb } = getDatabases(activeDatabases);
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb, historyDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+    });
 
     if (!debtorsDb || !historyDb) {
       throw new Error('Required databases not found');
@@ -206,11 +214,19 @@ exports.previousDebtorsStatement = async (cmbCode, startDate, endDate) => {
     handleError('Error processing debtor statement', error);
   }
 };
-exports.GetAllPreviousDebtorsDetails = async () => {
+exports.GetAllPreviousDebtorsDetails = async (req) => {
   try {
     // Fetch active databases
-    const activeDatabases = await databaseController.getActiveDatabases();
-    const { debtorsDb } = getDatabases(activeDatabases);
+    const activeDatabases = await databaseController.getActiveDatabases(
+      req.user,
+      req.query.shopKey
+    );
+    const { debtorsDb } = getDatabasesCustom({
+      activeDatabases,
+      serverHost: req.user.serverHost,
+      serverUser: req.user.serverUser,
+      serverPassword: req.user.serverPassword,
+    });
 
     if (!debtorsDb) {
       throw new Error('Debtors database not found');

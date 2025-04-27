@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node app.js",
-    "dev": "nodemon app.js"
+    "dev": "nodemon app.js",
+    "dev:local": "cross-env APP_ENV=local nodemon app.js"
   },
   "keywords": [],
   "author": "",
@@ -14,8 +15,11 @@
   "dependencies": {
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",
+    "cookie": "^1.0.2",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
+    "dotenv": "^16.4.7",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "lz-string": "^1.5.0",
@@ -24,6 +28,7 @@
     "sequelize": "^6.37.3"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "nodemon": "^3.1.4"
   }
 }
