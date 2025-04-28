@@ -60,32 +60,40 @@ exports.salesOverview = async (req, res) => {
 
   // 3) Wrap with an outer aggregation to combine subtotals across months
   const finalSql = `
-  -- per-product totals
-  SELECT
-    stockcode,
-    stockdescription,
-    SUM(subTotal) AS totalSales
-  FROM (
-    ${unionSql}
-  ) AS monthly_sales
-  GROUP BY stockcode, stockdescription
-
-  UNION ALL
-
-  -- grand total row
-  SELECT
-    NULL                AS stockcode,
-    'Grand Total'       AS stockdescription,
-    SUM(subTotal)       AS totalSales
-  FROM (
-    ${unionSql}
-  ) AS monthly_sales_gt
-
-  -- sort products first, grand total last
-  ORDER BY
-    CASE WHEN stockcode IS NULL THEN 1 ELSE 0 END,
-    totalSales DESC;
-`;
+    (
+      SELECT stockcode, stockdescription, totalSales, isGrand
+      FROM (
+        SELECT
+          stockcode,
+          stockdescription,
+          SUM(subTotal)    AS totalSales,
+          0                AS isGrand
+        FROM (
+          ${unionSql}
+        ) AS monthly_sales
+        GROUP BY stockcode, stockdescription
+        ORDER BY totalSales DESC
+        LIMIT 4
+      ) AS top_products
+    )
+    UNION ALL
+    (
+      SELECT stockcode, stockdescription, totalSales, isGrand
+      FROM (
+        SELECT
+          NULL             AS stockcode,
+          'Grand Total'    AS stockdescription,
+          SUM(subTotal)    AS totalSales,
+          1                AS isGrand
+        FROM (
+          ${unionSql}
+        ) AS monthly_sales_gt
+      ) AS grand_total
+    )
+    ORDER BY
+      isGrand ASC,
+      totalSales DESC;
+  `;
 
   // 4) Execute in one shot
   const finalResult = await historyDb.query(finalSql, {
