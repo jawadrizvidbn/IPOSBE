@@ -10,4 +10,10 @@ router.get(
   dashboardController.salesOverview
 );
 
+router.get(
+  "/revenue-report",
+  checkSuperadmin,
+  dashboardController.getRevenueReportForYear
+);
+
 module.exports = router;
