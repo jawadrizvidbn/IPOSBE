@@ -209,64 +209,63 @@ exports.acrossReport = async (startDate, endDate, req) => {
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
 
     // Parse comma-separated shopKeys into an array
-    const shopKeysString = req.query.shopKeys || "";
+    const shopKeysString = req.query.shopKeys || '';
     const shopKeysArray = shopKeysString
-      .split(",")
-      .map((key) => key.trim())
-      .filter((key) => key);
+      .split(',')
+      .map(key => key.trim())
+      .filter(key => key);
 
-    // Fetch active databases for each shop key in parallel
-    const databasesPerShop = await Promise.all(
-      shopKeysArray.map((shopKey) =>
-        databaseController.getActiveDatabases(req.user, shopKey)
-      )
+    // For each shopKey, fetch active databases and get history/stockmaster DBs
+    const dbGroups = await Promise.all(
+      shopKeysArray.map(async shopKey => {
+        const activeDbs = await databaseController.getActiveDatabases(req.user, shopKey);
+        // getDatabasesMultipleCustom expects an object, not an array
+        return getDatabasesMultipleCustom({
+          activeDatabasesMultiple: activeDbs,
+          serverHost,
+          serverUser,
+          serverPassword,
+        });
+      })
     );
-    // Flatten the array of database arrays
-    const activeDatabases = databasesPerShop.flat();
 
-    // Get the history and stockmaster databases
-    const { historyDbs, stockmasterDbs } = getDatabasesMultipleCustom({
-      activeDatabasesMultiple: activeDatabases,
-      serverHost,
-      serverUser,
-      serverPassword,
-    });
+    // Flatten history and stockmaster DBs across all shopKeys
+    const historyDbs = dbGroups.flatMap(group => group.historyDbs);
+    const stockmasterDbs = dbGroups.flatMap(group => group.stockmasterDbs);
 
     // 1) Retrieve table info for all history DBs concurrently
     const tableInfoArray = await Promise.all(
-      historyDbs.map(async (historyDb) => {
+      historyDbs.map(async historyDb => {
         const dbName = historyDb.config.database;
         const tables = await historyDb.query("SHOW TABLES", {
           type: historyDb.QueryTypes.SELECT,
         });
         // Collect matching tables
         const matchingTables = tables
-          .map((tableObj) => Object.values(tableObj)[0])
-          .filter((name) => /^(\d{6})tbldata_current_tran$/.test(name));
+          .map(tableObj => Object.values(tableObj)[0])
+          .filter(name => /^(\d{6})tbldata_current_tran$/.test(name));
         return { historyDb, dbName, matchingTables };
       })
     );
 
     // 2) Query all tables in parallel
-    const queryPromises = tableInfoArray.flatMap(
-      ({ historyDb, dbName, matchingTables }) =>
-        matchingTables.map((table) => {
-          // Build SQL
-          let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
-          if (startDate && endDate) {
-            if (new Date(startDate) > new Date(endDate)) {
-              throw new Error("Start date cannot be greater than end date");
-            }
-            sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
+    const queryPromises = tableInfoArray.flatMap(({ historyDb, dbName, matchingTables }) =>
+      matchingTables.map(table => {
+        let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
+        if (startDate && endDate) {
+          if (new Date(startDate) > new Date(endDate)) {
+            throw new Error("Start date cannot be greater than end date");
           }
-          return historyDb
-            .query(sqlQuery, {
-              type: historyDb.QueryTypes.SELECT,
-              timeout: 90000,
-              replacements: { startDate, endDate },
-            })
-            .then((results) => ({ dbName, results }));
-        })
+          sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
+        }
+        return historyDb
+          .query(sqlQuery, {
+            type: historyDb.QueryTypes.SELECT,
+            timeout: 90000,
+            replacements: { startDate, endDate },
+          })
+          .then(results => ({ dbName, results }));
+      })
     );
     const tableResults = await Promise.all(queryPromises);
 
@@ -296,7 +295,7 @@ exports.acrossReport = async (startDate, endDate, req) => {
     }
 
     // Prepare final results
-    const finalResults = Object.keys(allResults).map((stockcode) => {
+    const finalResults = Object.keys(allResults).map(stockcode => {
       const { stockdescription, qtyByDb, totalQty } = allResults[stockcode];
       return {
         stockcode,
@@ -307,18 +306,16 @@ exports.acrossReport = async (startDate, endDate, req) => {
     });
 
     // Ensure each DB column exists
-    historyDbs
-      .map((db) => db.config.database)
-      .forEach((dbName) => {
-        finalResults.forEach((item) => {
-          if (!(dbName in item)) item[dbName] = 0;
-        });
+    historyDbs.map(db => db.config.database).forEach(dbName => {
+      finalResults.forEach(item => {
+        if (!(dbName in item)) item[dbName] = 0;
       });
+    });
 
     // Round values
-    finalResults.forEach((item) => {
-      Object.keys(item).forEach((key) => {
-        if (typeof item[key] === "number") {
+    finalResults.forEach(item => {
+      Object.keys(item).forEach(key => {
+        if (typeof item[key] === 'number') {
           item[key] = parseFloat(item[key].toFixed(2));
         }
       });
