@@ -1260,9 +1260,9 @@ exports.tblReg = async (req, res) => {
 };
 
 exports.accrossShopReport = async (req, res) => {
-  const { startDate, endDate } = req.query; // Get dates from query parameters
+  const { startDate, endDate, shopKeys } = req.query; // Get dates from query parameters
   try {
-    const results = await reportsService.acrossReport(startDate, endDate, req);
+    const results = await reportsService.acrossReport(startDate, endDate, req, shopKeys);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);

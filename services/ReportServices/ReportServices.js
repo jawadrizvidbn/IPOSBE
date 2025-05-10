@@ -3,7 +3,10 @@ const {
   getDatabases,
   getDatabasesCustom,
 } = require("../../utils/databaseHelper"); // Adjust the path if necessary
-const { getDatabasesMultiple } = require("../../utils/databaseHelperMultiple"); // Adjust the path if necessary
+const {
+  getDatabasesMultiple,
+  getDatabasesMultipleCustom,
+} = require("../../utils/databaseHelperMultiple"); // Adjust the path if necessary
 const databaseController = require("../../controllers/databaseController");
 const { QueryTypes } = require("sequelize");
 const dateFns = require("date-fns");
@@ -83,80 +86,211 @@ exports.companydetailstblReg = async (req) => {
   }
 };
 
+// exports.acrossReport = async (startDate, endDate, req, shopKeys) => {
+//   try {
+//     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+//     const activeDatabases = await databaseController.getActiveDatabases(
+//       req.user,
+//       req.query.shopKey
+//     );
+
+//     // Get the history and stockmaster databases using the utility
+//     const { historyDbs, stockmasterDbs } =
+//       getDatabasesMultiple(activeDatabases);
+
+//     // Initialize an object to hold results with stock codes as keys
+//     const allResults = {};
+//     let grandTotalQty = 0; // Initialize a variable for the grand total
+
+//     // Loop through each database
+//     for (const historyDb of historyDbs) {
+//       const dbName = historyDb.config.database; // Get the current database name
+//       // Get all tables in the current database
+//       const tables = await historyDb.query("SHOW TABLES", {
+//         type: historyDb.QueryTypes.SELECT,
+//       });
+
+//       // Collect all tables matching the pattern YYYYMMtbldata_current_tran
+//       const matchingTables = [];
+
+//       tables.forEach((table) => {
+//         const tableName = Object.values(table)[0]; // Extract table name
+//         const match = tableName.match(/^(\d{6})tbldata_current_tran$/);
+//         if (match) {
+//           matchingTables.push(tableName); // Collect matching table names
+//         }
+//       });
+
+//       // Query each matching table
+//       for (const table of matchingTables) {
+//         // Modify the SQL query to include date filtering if dates are provided
+//         let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
+
+//         if (startDate && endDate) {
+//           // Validate date format
+//           if (new Date(startDate) > new Date(endDate)) {
+//             throw new Error("Start date cannot be greater than end date");
+//           }
+
+//           sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
+//         }
+
+//         const results = await historyDb.query(sqlQuery, {
+//           type: historyDb.QueryTypes.SELECT,
+//           timeout: 90000,
+//           replacements: { startDate, endDate },
+//         });
+//         // Aggregate results
+//         for (const { stockcode, stockdescription, qty } of results) {
+//           if (!allResults[stockcode]) {
+//             allResults[stockcode] = {
+//               stockcode,
+//               stockdescription,
+//               qtyByDb: { [dbName]: qty }, // Initialize with current database's quantity
+//               totalQty: qty, // Initialize total quantity
+//             };
+//           } else {
+//             allResults[stockcode].qtyByDb[dbName] =
+//               (allResults[stockcode].qtyByDb[dbName] || 0) + qty; // Sum quantities for this database
+//             allResults[stockcode].totalQty += qty; // Sum total quantities
+//           }
+//           grandTotalQty += qty; // Add to the grand total
+//         }
+//       }
+//     }
+
+//     // Check if any data was found
+//     if (Object.keys(allResults).length === 0) {
+//       throw new Error("No data found");
+//     }
+
+//     // Prepare final results
+//     const finalResults = Object.keys(allResults).map((stockcode) => {
+//       const { stockdescription, qtyByDb, totalQty } = allResults[stockcode];
+//       return {
+//         stockcode,
+//         stockdescription,
+//         ...qtyByDb, // Spread quantities by database
+//         totalQty: parseFloat(totalQty.toFixed(2)), // Add total quantity for this stock code
+//       };
+//     });
+
+//     // Add missing stock codes with zero quantities for each database
+//     for (const dbName of historyDbs.map((db) => db.config.database)) {
+//       finalResults.forEach((item) => {
+//         if (!(dbName in item)) {
+//           item[dbName] = 0; // Assign 0 if the stock code is missing in the database
+//         }
+//       });
+//     }
+
+//     // Round total quantities for each database
+//     finalResults.forEach((item) => {
+//       Object.keys(item).forEach((key) => {
+//         if (typeof item[key] === "number") {
+//           item[key] = parseFloat(item[key].toFixed(2)); // Round to 2 decimal places
+//         }
+//       });
+//     });
+
+//     grandTotalQty = parseFloat(grandTotalQty.toFixed(2)); // Round grandTotalQty to 2 decimal places
+
+//     return {
+//       finalResults, // This will now include results grouped by stock codes with quantities per database
+//       grandTotalQty, // Include the grand total in the return value
+//     };
+//   } catch (error) {
+//     throw new Error(error.message);
+//   }
+// };
+
 exports.acrossReport = async (startDate, endDate, req) => {
   try {
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
-    const activeDatabases = await databaseController.getActiveDatabases(
-      req.user,
-      req.query.shopKey
+
+    // Parse comma-separated shopKeys into an array
+    const shopKeysString = req.query.shopKeys || "";
+    const shopKeysArray = shopKeysString
+      .split(",")
+      .map((key) => key.trim())
+      .filter((key) => key);
+
+    // Fetch active databases for each shop key in parallel
+    const databasesPerShop = await Promise.all(
+      shopKeysArray.map((shopKey) =>
+        databaseController.getActiveDatabases(req.user, shopKey)
+      )
+    );
+    // Flatten the array of database arrays
+    const activeDatabases = databasesPerShop.flat();
+
+    // Get the history and stockmaster databases
+    const { historyDbs, stockmasterDbs } = getDatabasesMultipleCustom({
+      activeDatabasesMultiple: activeDatabases,
+      serverHost,
+      serverUser,
+      serverPassword,
+    });
+
+    // 1) Retrieve table info for all history DBs concurrently
+    const tableInfoArray = await Promise.all(
+      historyDbs.map(async (historyDb) => {
+        const dbName = historyDb.config.database;
+        const tables = await historyDb.query("SHOW TABLES", {
+          type: historyDb.QueryTypes.SELECT,
+        });
+        // Collect matching tables
+        const matchingTables = tables
+          .map((tableObj) => Object.values(tableObj)[0])
+          .filter((name) => /^(\d{6})tbldata_current_tran$/.test(name));
+        return { historyDb, dbName, matchingTables };
+      })
     );
 
-    // Get the history and stockmaster databases using the utility
-    const { historyDbs, stockmasterDbs } =
-      getDatabasesMultiple(activeDatabases);
+    // 2) Query all tables in parallel
+    const queryPromises = tableInfoArray.flatMap(
+      ({ historyDb, dbName, matchingTables }) =>
+        matchingTables.map((table) => {
+          // Build SQL
+          let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
+          if (startDate && endDate) {
+            if (new Date(startDate) > new Date(endDate)) {
+              throw new Error("Start date cannot be greater than end date");
+            }
+            sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
+          }
+          return historyDb
+            .query(sqlQuery, {
+              type: historyDb.QueryTypes.SELECT,
+              timeout: 90000,
+              replacements: { startDate, endDate },
+            })
+            .then((results) => ({ dbName, results }));
+        })
+    );
+    const tableResults = await Promise.all(queryPromises);
 
-    // Initialize an object to hold results with stock codes as keys
+    // Aggregate results
     const allResults = {};
-    let grandTotalQty = 0; // Initialize a variable for the grand total
-
-    // Loop through each database
-    for (const historyDb of historyDbs) {
-      const dbName = historyDb.config.database; // Get the current database name
-      // Get all tables in the current database
-      const tables = await historyDb.query("SHOW TABLES", {
-        type: historyDb.QueryTypes.SELECT,
+    let grandTotalQty = 0;
+    tableResults.forEach(({ dbName, results }) => {
+      results.forEach(({ stockcode, stockdescription, qty }) => {
+        if (!allResults[stockcode]) {
+          allResults[stockcode] = {
+            stockcode,
+            stockdescription,
+            qtyByDb: { [dbName]: qty },
+            totalQty: qty,
+          };
+        } else {
+          allResults[stockcode].qtyByDb[dbName] =
+            (allResults[stockcode].qtyByDb[dbName] || 0) + qty;
+          allResults[stockcode].totalQty += qty;
+        }
+        grandTotalQty += qty;
       });
+    });
 
-      // Collect all tables matching the pattern YYYYMMtbldata_current_tran
-      const matchingTables = [];
-
-      tables.forEach((table) => {
-        const tableName = Object.values(table)[0]; // Extract table name
-        const match = tableName.match(/^(\d{6})tbldata_current_tran$/);
-        if (match) {
-          matchingTables.push(tableName); // Collect matching table names
-        }
-      });
-
-      // Query each matching table
-      for (const table of matchingTables) {
-        // Modify the SQL query to include date filtering if dates are provided
-        let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
-
-        if (startDate && endDate) {
-          // Validate date format
-          if (new Date(startDate) > new Date(endDate)) {
-            throw new Error("Start date cannot be greater than end date");
-          }
-
-          sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
-        }
-
-        const results = await historyDb.query(sqlQuery, {
-          type: historyDb.QueryTypes.SELECT,
-          timeout: 90000,
-          replacements: { startDate, endDate },
-        });
-        // Aggregate results
-        for (const { stockcode, stockdescription, qty } of results) {
-          if (!allResults[stockcode]) {
-            allResults[stockcode] = {
-              stockcode,
-              stockdescription,
-              qtyByDb: { [dbName]: qty }, // Initialize with current database's quantity
-              totalQty: qty, // Initialize total quantity
-            };
-          } else {
-            allResults[stockcode].qtyByDb[dbName] =
-              (allResults[stockcode].qtyByDb[dbName] || 0) + qty; // Sum quantities for this database
-            allResults[stockcode].totalQty += qty; // Sum total quantities
-          }
-          grandTotalQty += qty; // Add to the grand total
-        }
-      }
-    }
-
-    // Check if any data was found
     if (Object.keys(allResults).length === 0) {
       throw new Error("No data found");
     }
@@ -167,35 +301,31 @@ exports.acrossReport = async (startDate, endDate, req) => {
       return {
         stockcode,
         stockdescription,
-        ...qtyByDb, // Spread quantities by database
-        totalQty: parseFloat(totalQty.toFixed(2)), // Add total quantity for this stock code
+        ...qtyByDb,
+        totalQty: parseFloat(totalQty.toFixed(2)),
       };
     });
 
-    // Add missing stock codes with zero quantities for each database
-    for (const dbName of historyDbs.map((db) => db.config.database)) {
-      finalResults.forEach((item) => {
-        if (!(dbName in item)) {
-          item[dbName] = 0; // Assign 0 if the stock code is missing in the database
-        }
+    // Ensure each DB column exists
+    historyDbs
+      .map((db) => db.config.database)
+      .forEach((dbName) => {
+        finalResults.forEach((item) => {
+          if (!(dbName in item)) item[dbName] = 0;
+        });
       });
-    }
 
-    // Round total quantities for each database
+    // Round values
     finalResults.forEach((item) => {
       Object.keys(item).forEach((key) => {
         if (typeof item[key] === "number") {
-          item[key] = parseFloat(item[key].toFixed(2)); // Round to 2 decimal places
+          item[key] = parseFloat(item[key].toFixed(2));
         }
       });
     });
+    grandTotalQty = parseFloat(grandTotalQty.toFixed(2));
 
-    grandTotalQty = parseFloat(grandTotalQty.toFixed(2)); // Round grandTotalQty to 2 decimal places
-
-    return {
-      finalResults, // This will now include results grouped by stock codes with quantities per database
-      grandTotalQty, // Include the grand total in the return value
-    };
+    return { finalResults, grandTotalQty };
   } catch (error) {
     throw new Error(error.message);
   }
@@ -2536,7 +2666,7 @@ exports.allDataMinStockLevel = async (req) => {
 exports.allDataMaxStockLevel = async (req) => {
   try {
     // Retrieve active databases
-    const { serverHost, serverPassword, serverUser , serverPort } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
