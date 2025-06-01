@@ -267,7 +267,7 @@ exports.getRevenueReportForYear = async (req, res) => {
  * Optional query-param:
  *   ?year=2025
  */
-export const getTopStores = async (req, res) => {
+exports.getTopStores = async (req, res) => {
   try {
     const { shopKeys } = req.body;
     const yearParam = req.query.year;
