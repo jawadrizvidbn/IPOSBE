@@ -255,3 +255,198 @@ exports.getRevenueReportForYear = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+/**
+ * POST /api/stores/top
+ *
+ * Body:
+ *   {
+ *     "shopKeys": ["SHOP_A", "SHOP_B", ...]
+ *   }
+ *
+ * Optional query-param:
+ *   ?year=2025
+ */
+export const getTopStores = async (req, res) => {
+  try {
+    const { shopKeys } = req.body;
+    const yearParam = req.query.year;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+
+    // 1) Validate shopKeys array
+    if (!Array.isArray(shopKeys) || shopKeys.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "`shopKeys` must be a non-empty array",
+      });
+    }
+
+    // 2) Determine which calendar year to use (defaults to current)
+    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+    if (isNaN(year) || year < 2000 || year > 3000) {
+      return res.status(400).json({
+        success: false,
+        message: "`year` must be a valid 4-digit number.",
+      });
+    }
+
+    // 3) Precompute the start/end timestamps for SQL filters
+    const yearStart = `${year}-01-01 00:00:00`;
+    const yearEnd = `${year}-12-31 23:59:59`;
+
+    // 4) For each shopKey, build a Promise that:
+    //    a) finds its history DB name
+    //    b) lists all monthly tables for that DB
+    //    c) filters the ones for our YYYYMM range
+    //    d) runs one UNION-ALL query to get totalCost, totalSelling, totalTransactions
+    //    e) returns { shopKey, totalCost, totalSelling, profit, totalTransactions, avgPerTransaction }
+    const perShopPromises = shopKeys.map(async (shopKey) => {
+      // 4a) find "history" DB for this shopKey
+      const allDbs = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+      let historyDbName;
+      outerLoop: for (const grp of Object.values(allDbs)) {
+        for (const dbName of grp) {
+          if (dbName.includes("history")) {
+            historyDbName = dbName;
+            break outerLoop;
+          }
+        }
+      }
+      if (!historyDbName) {
+        // If no history DB, treat as zero-sales
+        return {
+          shopKey,
+          totalCost: 0,
+          totalSelling: 0,
+          profit: 0,
+          totalTransactions: 0,
+          avgPerTransaction: 0,
+        };
+      }
+
+      // 4b) connect to that history DB
+      const historyDb = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      // 4c) figure out the twelve expected "YYYYMMtbldata_current_tran" table names for `year`
+      const expectedTables = [];
+      for (let m = 1; m <= 12; ++m) {
+        const mm = String(m).padStart(2, "0");
+        expectedTables.push(`${year}${mm}tbldata_current_tran`);
+      }
+
+      // 4d) query INFORMATION_SCHEMA to see which of those actually exist
+      const existingTables = await historyDb.query(
+        `
+        SELECT TABLE_NAME AS Name
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = :dbName
+          AND TABLE_NAME IN (:tableList)
+        `,
+        {
+          replacements: {
+            dbName: historyDbName,
+            tableList: expectedTables,
+          },
+          type: QueryTypes.SELECT,
+        }
+      );
+      const tablesInYear = existingTables.map((r) => r.Name);
+      if (!tablesInYear.length) {
+        // No monthly data: return zeros
+        return {
+          shopKey,
+          totalCost: 0,
+          totalSelling: 0,
+          profit: 0,
+          totalTransactions: 0,
+          avgPerTransaction: 0,
+        };
+      }
+
+      // 4e) for each monthly table, build a subquery that computes:
+      //       subCost        = SUM(averagecostprice * qty)
+      //       subSelling     = SUM(linetotal)
+      //       subTransactions= COUNT(DISTINCT transactionnum)
+      const subqueries = tablesInYear.map((tbl) =>
+        `
+        SELECT
+          SUM(averagecostprice * qty)    AS subCost,
+          SUM(linetotal)                 AS subSelling,
+          COUNT(DISTINCT transactionnum) AS subTransactions
+        FROM \`${tbl}\`
+        WHERE datetime BETWEEN :yearStart AND :yearEnd
+      `.trim()
+      );
+
+      // 4f) UNION ALL them, then do one final "SELECT SUM(...)"
+      const unionSql = subqueries.join("\nUNION ALL\n");
+      const finalSql = `
+        SELECT
+          SUM(subCost)         AS totalCost,
+          SUM(subSelling)      AS totalSelling,
+          SUM(subTransactions) AS totalTransactions
+        FROM (
+          ${unionSql}
+        ) AS yearly_union;
+      `;
+
+      const [aggregateRow] = await historyDb.query(finalSql, {
+        replacements: { yearStart, yearEnd },
+        type: QueryTypes.SELECT,
+      });
+
+      // 4g) parse numbers, compute profit & average per txn
+      const totalCost = Number(aggregateRow.totalCost) || 0;
+      const totalSelling = Number(aggregateRow.totalSelling) || 0;
+      const totalTransactions = Number(aggregateRow.totalTransactions) || 0;
+      const profit = totalSelling - totalCost;
+      const avgPerTransaction =
+        totalTransactions > 0 ? totalSelling / totalTransactions : 0;
+
+      return {
+        shopKey,
+        totalCost,
+        totalSelling,
+        profit,
+        totalTransactions,
+        avgPerTransaction,
+      };
+    }); // end map(shopKey → metrics)
+
+    // 5) await all shops
+    const shopsMetrics = await Promise.all(perShopPromises);
+
+    // 6) sort & slice for "byTurnover" (top 5) and "byTransactions" (top 10)
+    const byTurnover = [...shopsMetrics]
+      .sort((a, b) => b.totalSelling - a.totalSelling)
+      .slice(0, 5);
+
+    const byTransactions = [...shopsMetrics]
+      .sort((a, b) => b.totalTransactions - a.totalTransactions)
+      .slice(0, 10);
+
+    // 7) return JSON
+    return res.json({
+      success: true,
+      data: {
+        byTurnover,
+        byTransactions,
+      },
+    });
+  } catch (err) {
+    console.error("getTopStoresByShopKeys error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching top stores.",
+    });
+  }
+};

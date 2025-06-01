@@ -16,4 +16,6 @@ router.get(
   dashboardController.getRevenueReportForYear
 );
 
+router.post("/top-stores", checkSuperadmin, dashboardController.getTopStores);
+
 module.exports = router;
