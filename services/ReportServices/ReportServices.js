@@ -11,6 +11,7 @@ const databaseController = require("../../controllers/databaseController");
 const { QueryTypes } = require("sequelize");
 const dateFns = require("date-fns");
 const { format, getYear, getMonth, addDays } = require("date-fns");
+const createSequelizeInstanceCustom = require("../../utils/sequelizeInstanceCustom");
 
 exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
   try {
