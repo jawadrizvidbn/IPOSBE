@@ -340,7 +340,7 @@ exports.acrossReport = async (startDate, endDate, req) => {
  * Body:   { shopKeys: ["SHOP_A","SHOP_B",…] }
  * Query:  ?year=2025   (optional; defaults to current calendar year)
  */
-exports.acrossStoresProductsReport = async (req, res) => {
+exports.acrossStoresProductsReport = async (req) => {
   try {
     const yearParam = req.query.year;
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
@@ -354,10 +354,7 @@ exports.acrossStoresProductsReport = async (req, res) => {
 
     const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
     if (isNaN(year) || year < 2000 || year > 3000) {
-      return res.status(400).json({
-        success: false,
-        message: "`year` must be a valid 4-digit number",
-      });
+      throw new Error("`year` must be a valid 4-digit number");
     }
 
     // 2) Prepare date window and monthly table names
@@ -514,12 +511,9 @@ exports.acrossStoresProductsReport = async (req, res) => {
       result.push(row);
     }
 
-    return res.json({ success: true, data: result });
+    return result;
   } catch (err) {
-    console.error("acrossStoresProductsReport error:", err);
-    return res
-      .status(500)
-      .json({ success: false, message: "Server error generating report" });
+    throw err;
   }
 };
 

@@ -1284,7 +1284,7 @@ exports.accrossShopReport = async (req, res) => {
 
 exports.acrossStoresProductsReport = async (req, res) => {
   try {
-    const results = await reportsService.acrossStoresProductsReport(req, res);
+    const results = await reportsService.acrossStoresProductsReport(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
