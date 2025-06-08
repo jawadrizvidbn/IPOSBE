@@ -209,16 +209,19 @@ exports.acrossReport = async (startDate, endDate, req) => {
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
 
     // Parse comma-separated shopKeys into an array
-    const shopKeysString = req.query.shopKeys || '';
+    const shopKeysString = req.query.shopKeys || "";
     const shopKeysArray = shopKeysString
-      .split(',')
-      .map(key => key.trim())
-      .filter(key => key);
+      .split(",")
+      .map((key) => key.trim())
+      .filter((key) => key);
 
     // For each shopKey, fetch active databases and get history/stockmaster DBs
     const dbGroups = await Promise.all(
-      shopKeysArray.map(async shopKey => {
-        const activeDbs = await databaseController.getActiveDatabases(req.user, shopKey);
+      shopKeysArray.map(async (shopKey) => {
+        const activeDbs = await databaseController.getActiveDatabases(
+          req.user,
+          shopKey
+        );
         // getDatabasesMultipleCustom expects an object, not an array
         return getDatabasesMultipleCustom({
           activeDatabasesMultiple: activeDbs,
@@ -230,42 +233,43 @@ exports.acrossReport = async (startDate, endDate, req) => {
     );
 
     // Flatten history and stockmaster DBs across all shopKeys
-    const historyDbs = dbGroups.flatMap(group => group.historyDbs);
-    const stockmasterDbs = dbGroups.flatMap(group => group.stockmasterDbs);
+    const historyDbs = dbGroups.flatMap((group) => group.historyDbs);
+    const stockmasterDbs = dbGroups.flatMap((group) => group.stockmasterDbs);
 
     // 1) Retrieve table info for all history DBs concurrently
     const tableInfoArray = await Promise.all(
-      historyDbs.map(async historyDb => {
+      historyDbs.map(async (historyDb) => {
         const dbName = historyDb.config.database;
         const tables = await historyDb.query("SHOW TABLES", {
           type: historyDb.QueryTypes.SELECT,
         });
         // Collect matching tables
         const matchingTables = tables
-          .map(tableObj => Object.values(tableObj)[0])
-          .filter(name => /^(\d{6})tbldata_current_tran$/.test(name));
+          .map((tableObj) => Object.values(tableObj)[0])
+          .filter((name) => /^(\d{6})tbldata_current_tran$/.test(name));
         return { historyDb, dbName, matchingTables };
       })
     );
 
     // 2) Query all tables in parallel
-    const queryPromises = tableInfoArray.flatMap(({ historyDb, dbName, matchingTables }) =>
-      matchingTables.map(table => {
-        let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
-        if (startDate && endDate) {
-          if (new Date(startDate) > new Date(endDate)) {
-            throw new Error("Start date cannot be greater than end date");
+    const queryPromises = tableInfoArray.flatMap(
+      ({ historyDb, dbName, matchingTables }) =>
+        matchingTables.map((table) => {
+          let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
+          if (startDate && endDate) {
+            if (new Date(startDate) > new Date(endDate)) {
+              throw new Error("Start date cannot be greater than end date");
+            }
+            sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
           }
-          sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
-        }
-        return historyDb
-          .query(sqlQuery, {
-            type: historyDb.QueryTypes.SELECT,
-            timeout: 90000,
-            replacements: { startDate, endDate },
-          })
-          .then(results => ({ dbName, results }));
-      })
+          return historyDb
+            .query(sqlQuery, {
+              type: historyDb.QueryTypes.SELECT,
+              timeout: 90000,
+              replacements: { startDate, endDate },
+            })
+            .then((results) => ({ dbName, results }));
+        })
     );
     const tableResults = await Promise.all(queryPromises);
 
@@ -295,7 +299,7 @@ exports.acrossReport = async (startDate, endDate, req) => {
     }
 
     // Prepare final results
-    const finalResults = Object.keys(allResults).map(stockcode => {
+    const finalResults = Object.keys(allResults).map((stockcode) => {
       const { stockdescription, qtyByDb, totalQty } = allResults[stockcode];
       return {
         stockcode,
@@ -306,16 +310,18 @@ exports.acrossReport = async (startDate, endDate, req) => {
     });
 
     // Ensure each DB column exists
-    historyDbs.map(db => db.config.database).forEach(dbName => {
-      finalResults.forEach(item => {
-        if (!(dbName in item)) item[dbName] = 0;
+    historyDbs
+      .map((db) => db.config.database)
+      .forEach((dbName) => {
+        finalResults.forEach((item) => {
+          if (!(dbName in item)) item[dbName] = 0;
+        });
       });
-    });
 
     // Round values
-    finalResults.forEach(item => {
-      Object.keys(item).forEach(key => {
-        if (typeof item[key] === 'number') {
+    finalResults.forEach((item) => {
+      Object.keys(item).forEach((key) => {
+        if (typeof item[key] === "number") {
           item[key] = parseFloat(item[key].toFixed(2));
         }
       });
@@ -325,6 +331,194 @@ exports.acrossReport = async (startDate, endDate, req) => {
     return { finalResults, grandTotalQty };
   } catch (error) {
     throw new Error(error.message);
+  }
+};
+
+/**
+ * POST /api/reports/acrossStoresProducts
+ * Body:   { shopKeys: ["SHOP_A","SHOP_B",…] }
+ * Query:  ?year=2025   (optional; defaults to current calendar year)
+ */
+exports.acrossStoresProductsReport = async (req, res) => {
+  try {
+    const yearParam = req.query.year;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+
+    // Parse comma-separated shopKeys into an array
+    const shopKeysString = req.query.shopKeys || "";
+    const shopKeys = shopKeysString
+      .split(",")
+      .map((key) => key.trim())
+      .filter((key) => key);
+
+    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+    if (isNaN(year) || year < 2000 || year > 3000) {
+      return res.status(400).json({
+        success: false,
+        message: "`year` must be a valid 4-digit number",
+      });
+    }
+
+    // 2) Prepare date window and monthly table names
+    const yearStart = `${year}-01-01 00:00:00`;
+    const yearEnd = `${year}-12-31 23:59:59`;
+    const expectedTables = Array.from({ length: 12 }, (_, i) => {
+      const mm = String(i + 1).padStart(2, "0");
+      return `${year}${mm}tbldata_current_tran`;
+    });
+
+    // 3) For each shop, fetch the per-product aggregates
+    const perShopPromises = shopKeys.map(async (shopKey) => {
+      // 3a) find the history‐DB name for this shopKey
+      const activeDbs = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+      let historyDbName;
+      outer: for (const grp of Object.values(activeDbs)) {
+        for (const db of grp) {
+          if (db.includes("history")) {
+            historyDbName = db;
+            break outer;
+          }
+        }
+      }
+      if (!historyDbName) {
+        // no data for this shop → return empty list
+        return { shopKey, data: [] };
+      }
+
+      // 3b) connect Sequelize to that DB
+      const historyDb = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      // 3c) discover which monthly tables actually exist
+      const existing = await historyDb.query(
+        `
+        SELECT TABLE_NAME AS Name
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = :db
+          AND TABLE_NAME IN (:tbls)
+        `,
+        {
+          replacements: { db: historyDbName, tbls: expectedTables },
+          type: QueryTypes.SELECT,
+        }
+      );
+      const tablesInYear = existing.map((r) => r.Name);
+      if (tablesInYear.length === 0) {
+        return { shopKey, data: [] };
+      }
+
+      // 3d) build one subquery per month that sums qty, cost, and selling
+      const subq = tablesInYear
+        .map((tbl) =>
+          `
+        SELECT
+          stockcode,
+          stockdescription,
+          SUM(qty)                         AS quantity,
+          SUM(averagecostprice * qty)     AS totalCost,
+          SUM(linetotal)                  AS totalSelling
+        FROM \`${tbl}\`
+        WHERE datetime BETWEEN :start AND :end
+        GROUP BY stockcode, stockdescription
+      `.trim()
+        )
+        .join("\nUNION ALL\n");
+
+      // 3e) wrap & re-aggregate in case same product appears in multiple months
+      const sql = `
+        SELECT
+          stockcode,
+          stockdescription,
+          SUM(quantity)     AS quantity,
+          SUM(totalCost)    AS totalCost,
+          SUM(totalSelling) AS totalSelling
+        FROM (
+          ${subq}
+        ) AS monthly_union
+        GROUP BY stockcode, stockdescription;
+      `;
+      const rows = await historyDb.query(sql, {
+        replacements: { start: yearStart, end: yearEnd },
+        type: QueryTypes.SELECT,
+      });
+
+      return { shopKey, data: rows };
+    });
+
+    const perShopResults = await Promise.all(perShopPromises);
+
+    // 4) Merge all shops’ rows into one product-pivot table
+    const prodMap = new Map();
+    perShopResults.forEach(({ shopKey, data }) => {
+      data.forEach(
+        ({
+          stockcode,
+          stockdescription,
+          quantity,
+          totalCost,
+          totalSelling,
+        }) => {
+          const key = `${stockcode}|||${stockdescription}`;
+          if (!prodMap.has(key)) {
+            prodMap.set(key, {
+              stockcode,
+              stockdescription,
+              shops: {},
+            });
+          }
+          const rec = prodMap.get(key);
+          const qty = Number(quantity) || 0;
+          const tc = Number(totalCost) || 0;
+          const ts = Number(totalSelling) || 0;
+          rec.shops[shopKey] = {
+            quantity: qty,
+            unitCost: qty > 0 ? tc / qty : 0,
+            totalCost: tc,
+            unitSelling: qty > 0 ? ts / qty : 0,
+            totalSelling: ts,
+            quantitySold: qty,
+          };
+        }
+      );
+    });
+
+    // 5) build the final array
+    const result = [];
+    for (const { stockcode, stockdescription, shops } of prodMap.values()) {
+      const row = { stockcode, stockdescription };
+      shopKeys.forEach((shopKey) => {
+        const m = shops[shopKey] || {
+          quantity: 0,
+          unitCost: 0,
+          totalCost: 0,
+          unitSelling: 0,
+          totalSelling: 0,
+          quantitySold: 0,
+        };
+        row[`${shopKey}_quantity`] = m.quantity;
+        row[`${shopKey}_unitCost`] = m.unitCost;
+        row[`${shopKey}_totalCost`] = m.totalCost;
+        row[`${shopKey}_unitSelling`] = m.unitSelling;
+        row[`${shopKey}_totalSelling`] = m.totalSelling;
+        row[`${shopKey}_quantitySold`] = m.quantitySold;
+      });
+      result.push(row);
+    }
+
+    return res.json({ success: true, data: result });
+  } catch (err) {
+    console.error("acrossStoresProductsReport error:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Server error generating report" });
   }
 };
 
