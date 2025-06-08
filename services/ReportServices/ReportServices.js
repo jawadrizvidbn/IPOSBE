@@ -501,12 +501,12 @@ exports.acrossStoresProductsReport = async (req) => {
           totalSelling: 0,
           quantitySold: 0,
         };
-        row[`${shopKey}_quantity`] = m.quantity;
-        row[`${shopKey}_unitCost`] = m.unitCost;
-        row[`${shopKey}_totalCost`] = m.totalCost;
-        row[`${shopKey}_unitSelling`] = m.unitSelling;
-        row[`${shopKey}_totalSelling`] = m.totalSelling;
-        row[`${shopKey}_quantitySold`] = m.quantitySold;
+        row[`${shopKey} Quantity`] = m.quantity;
+        row[`${shopKey} Unit Cost`] = m.unitCost;
+        row[`${shopKey} Total Cost`] = m.totalCost;
+        row[`${shopKey} Unit Selling`] = m.unitSelling;
+        row[`${shopKey} Total Selling`] = m.totalSelling;
+        row[`${shopKey} Quantity Sold`] = m.quantitySold;
       });
       result.push(row);
     }
