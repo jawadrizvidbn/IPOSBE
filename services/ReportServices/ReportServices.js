@@ -311,7 +311,7 @@ exports.acrossReport = async (startDate, endDate, req) => {
     });
 
     // Get unique database names for sortableKeys
-    const dbNames = [...new Set(historyDbs.map(db => db.config.database))];
+    const dbNames = [...new Set(historyDbs.map((db) => db.config.database))];
 
     // Ensure each DB column exists
     historyDbs
@@ -517,7 +517,20 @@ exports.acrossStoresProductsReport = async (req) => {
       result.push(row);
     }
 
-    return result;
+    // 6) Generate sortableKeys for all the dynamic columns
+    const sortableKeys = [];
+    shopKeys.forEach((shopKey) => {
+      sortableKeys.push(
+        `${shopKey} Quantity`,
+        `${shopKey} Unit Cost`,
+        `${shopKey} Total Cost`,
+        `${shopKey} Unit Selling`,
+        `${shopKey} Total Selling`,
+        `${shopKey} Quantity Sold`
+      );
+    });
+
+    return { data: result, sortableKeys };
   } catch (err) {
     throw err;
   }

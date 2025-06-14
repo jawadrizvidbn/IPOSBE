@@ -440,6 +440,7 @@ exports.getTopStores = async (req, res) => {
       data: {
         byTurnover,
         byTransactions,
+        sortableKeys: ["totalSelling", "totalCost", "totalTransactions", "profit", "avgPerTransaction"],
       },
     });
   } catch (err) {
