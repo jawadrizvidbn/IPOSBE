@@ -1262,7 +1262,29 @@ exports.tblReg = async (req, res) => {
 exports.accrossShopReport = async (req, res) => {
   const { startDate, endDate, shopKeys } = req.query; // Get dates from query parameters
   try {
-    const results = await reportsService.acrossReport(startDate, endDate, req, shopKeys);
+    const results = await reportsService.acrossReport(
+      startDate,
+      endDate,
+      req,
+      shopKeys
+    );
+    res.send(results);
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res
+      .status(
+        error.message.includes("not found") ||
+          error.message.includes("No data found")
+          ? 404
+          : 500
+      )
+      .json({ message: error.message });
+  }
+};
+
+exports.acrossStoresProductsReport = async (req, res) => {
+  try {
+    const results = await reportsService.acrossStoresProductsReport(req);
     res.send(results);
   } catch (error) {
     console.error("Error fetching data:", error);
