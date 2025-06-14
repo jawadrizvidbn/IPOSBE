@@ -305,8 +305,11 @@ exports.acrossReport = async (startDate, endDate, req) => {
       };
     });
 
+    // Get unique database names for sortableKeys
+    const dbNames = [...new Set(historyDbs.map(db => db.config.database))];
+
     // Ensure each DB column exists
-    historyDbs.map(db => db.config.database).forEach(dbName => {
+    dbNames.forEach(dbName => {
       finalResults.forEach(item => {
         if (!(dbName in item)) item[dbName] = 0;
       });
@@ -322,12 +325,14 @@ exports.acrossReport = async (startDate, endDate, req) => {
     });
     grandTotalQty = parseFloat(grandTotalQty.toFixed(2));
 
-    return { finalResults, grandTotalQty };
+    // Include database names in sortableKeys along with totalQty
+    const sortableKeys = ["totalQty", ...dbNames];
+
+    return { finalResults, grandTotalQty, sortableKeys };
   } catch (error) {
     throw new Error(error.message);
   }
 };
-
 exports.allTblDataCancelTran = async (req) => {
   try {
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
