@@ -308,17 +308,22 @@ exports.getTopStores = async (req, res) => {
         req.user,
         shopKey
       );
-      console.log("allDbs", allDbs);
+
       let historyDbName;
       let masterDbName;
-      outerLoop: for (const grp of Object.values(allDbs)) {
+      outerLoop:
+      for (const grp of Object.values(allDbs)) {
         for (const dbName of grp) {
-          if (dbName.includes("history")) {
+          // if we haven't found history yet and this one matches, grab it
+          if (historyDbName === null && dbName.includes("history")) {
             historyDbName = dbName;
-            break outerLoop;
           }
-          if (dbName.includes("master")) {
+          // if we haven't found master yet and this one matches, grab it
+          if (masterDbName  === null && dbName.includes("master")) {
             masterDbName = dbName;
+          }
+          // once we've got both, stop all looping
+          if (historyDbName && masterDbName) {
             break outerLoop;
           }
         }
