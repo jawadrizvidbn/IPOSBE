@@ -373,7 +373,7 @@ exports.getTopStores = async (req, res) => {
           }
         );
 
-        storeFields.push({ shopKey: storeFieldsQuery[0] });
+        storeFields.push({ [shopKey]: storeFieldsQuery[0] });
       } catch (err) {
         console.error("getTopStores:", err);
       }
