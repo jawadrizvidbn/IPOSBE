@@ -300,6 +300,8 @@ exports.getTopStores = async (req, res) => {
     //    c) filters the ones for our YYYYMM range
     //    d) runs one UNION-ALL query to get totalCost, totalSelling, totalTransactions
     //    e) returns { shopKey, totalCost, totalSelling, profit, totalTransactions, avgPerTransaction }
+    let storeFields = [];
+
     const perShopPromises = shopKeys.map(async (shopKey) => {
       // 4a) find "history" DB for this shopKey
       const allDbs = await databaseController.getActiveDatabases(
@@ -308,7 +310,6 @@ exports.getTopStores = async (req, res) => {
       );
       let historyDbName;
       let masterDbName;
-      let storeFields = {};
       outerLoop: for (const grp of Object.values(allDbs)) {
         for (const dbName of grp) {
           if (dbName.includes("history")) {
@@ -369,7 +370,7 @@ exports.getTopStores = async (req, res) => {
           }
         );
 
-        storeFields = storeFieldsQuery[0];
+        storeFields.push({shopKey: storeFieldsQuery[0]})
       } catch (err) {
         console.error("getTopStores:", err);
       }
@@ -450,7 +451,7 @@ exports.getTopStores = async (req, res) => {
         profit,
         totalTransactions,
         avgPerTransaction,
-        storeFields
+        
       };
     }); // end map(shopKey → metrics)
 
@@ -472,6 +473,7 @@ exports.getTopStores = async (req, res) => {
       data: {
         byTurnover,
         byTransactions,
+        storeFields,
         sortableKeys: [
           "totalSelling",
           "totalCost",
