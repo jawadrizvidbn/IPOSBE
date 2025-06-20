@@ -1299,6 +1299,25 @@ exports.acrossStoresProductsReport = async (req, res) => {
   }
 };
 
+exports.acrossRetailWholesaleByProductReport = async (req, res) => {
+  try {
+    const results = await reportsService.acrossRetailWholesaleByProductReport(
+      req
+    );
+    res.send(results);
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res
+      .status(
+        error.message.includes("not found") ||
+          error.message.includes("No data found")
+          ? 404
+          : 500
+      )
+      .json({ message: error.message });
+  }
+};
+
 exports.findAllTblDataCancelTran = async (req, res) => {
   try {
     const results = await reportsService.allTblDataCancelTran(req);

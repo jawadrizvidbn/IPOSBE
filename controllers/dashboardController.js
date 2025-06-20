@@ -307,10 +307,16 @@ exports.getTopStores = async (req, res) => {
         shopKey
       );
       let historyDbName;
+      let masterDbName;
+      let storeFields = {};
       outerLoop: for (const grp of Object.values(allDbs)) {
         for (const dbName of grp) {
           if (dbName.includes("history")) {
             historyDbName = dbName;
+            break outerLoop;
+          }
+          if (dbName.includes("master")) {
+            masterDbName = dbName;
             break outerLoop;
           }
         }
@@ -336,11 +342,36 @@ exports.getTopStores = async (req, res) => {
         port: serverPort,
       });
 
+      const masterDb = createSequelizeInstanceCustom({
+        databaseName: masterDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
       // 4c) figure out the twelve expected "YYYYMMtbldata_current_tran" table names for `year`
       const expectedTables = [];
       for (let m = 1; m <= 12; ++m) {
         const mm = String(m).padStart(2, "0");
         expectedTables.push(`${year}${mm}tbldata_current_tran`);
+      }
+
+      try {
+        const storeFieldsQuery = await masterDb.query(
+          `
+          SELECT *
+          FROM tblstorefields
+          WHERE shopkey = :shopKey
+        `,
+          {
+            replacements: { shopKey },
+            type: QueryTypes.SELECT,
+          }
+        );
+
+        storeFields = storeFieldsQuery[0];
+      } catch (err) {
+        console.error("getTopStores:", err);
       }
 
       // 4d) query INFORMATION_SCHEMA to see which of those actually exist
@@ -419,6 +450,7 @@ exports.getTopStores = async (req, res) => {
         profit,
         totalTransactions,
         avgPerTransaction,
+        storeFields
       };
     }); // end map(shopKey → metrics)
 
@@ -440,7 +472,13 @@ exports.getTopStores = async (req, res) => {
       data: {
         byTurnover,
         byTransactions,
-        sortableKeys: ["totalSelling", "totalCost", "totalTransactions", "profit", "avgPerTransaction"],
+        sortableKeys: [
+          "totalSelling",
+          "totalCost",
+          "totalTransactions",
+          "profit",
+          "avgPerTransaction",
+        ],
       },
     });
   } catch (err) {
