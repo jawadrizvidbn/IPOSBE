@@ -362,10 +362,8 @@ exports.getTopStores = async (req, res) => {
           `
           SELECT *
           FROM tblstorefields
-          WHERE shopkey = :shopKey
         `,
           {
-            replacements: { shopKey },
             type: QueryTypes.SELECT,
           }
         );
