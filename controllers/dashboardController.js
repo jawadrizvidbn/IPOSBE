@@ -308,6 +308,7 @@ exports.getTopStores = async (req, res) => {
         req.user,
         shopKey
       );
+      console.log("allDbs", allDbs);
       let historyDbName;
       let masterDbName;
       outerLoop: for (const grp of Object.values(allDbs)) {
