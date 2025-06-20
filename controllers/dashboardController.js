@@ -311,15 +311,14 @@ exports.getTopStores = async (req, res) => {
 
       let historyDbName;
       let masterDbName;
-      outerLoop:
-      for (const grp of Object.values(allDbs)) {
+      outerLoop: for (const grp of Object.values(allDbs)) {
         for (const dbName of grp) {
           // if we haven't found history yet and this one matches, grab it
-          if (historyDbName === null && dbName.includes("history")) {
+          if (dbName.includes("history")) {
             historyDbName = dbName;
           }
           // if we haven't found master yet and this one matches, grab it
-          if (masterDbName  === null && dbName.includes("master")) {
+          if (dbName.includes("master")) {
             masterDbName = dbName;
           }
           // once we've got both, stop all looping
@@ -374,7 +373,7 @@ exports.getTopStores = async (req, res) => {
           }
         );
 
-        storeFields.push({shopKey: storeFieldsQuery[0]})
+        storeFields.push({ shopKey: storeFieldsQuery[0] });
       } catch (err) {
         console.error("getTopStores:", err);
       }
@@ -455,7 +454,6 @@ exports.getTopStores = async (req, res) => {
         profit,
         totalTransactions,
         avgPerTransaction,
-        
       };
     }); // end map(shopKey → metrics)
 
