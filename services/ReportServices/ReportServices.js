@@ -370,24 +370,38 @@ exports.acrossReport = async (startDate, endDate, req) => {
     // flatten history DBs for the qty queries
     const historyDbs = dbGroups.flatMap((g) => g.historyDbs);
 
-    // --- 0) fetch tblstorefields from each shop’s stockmaster DB ---
-    // we assume one stockmasterDb per shop
-    const storeFieldsByShop = await Promise.all(
-      dbGroups.map(async (group, idx) => {
-        const stockmasterDb = group.stockmasterDbs[0];
-        // grab all columns from tblstorefields (one row per store)
-        const rows = await stockmasterDb.query(
-          `SELECT * FROM tblstorefields`,
-          { type: stockmasterDb.QueryTypes.SELECT }
-        );
-        const row = rows[0] || {};
-        // prefix each field name with shop index+1
-        return Object.entries(row).reduce((acc, [col, val]) => {
-          acc[`shop${idx + 1}_${col}`] = val;
-          return acc;
-        }, {});
-      })
-    );
+  // --- 0) fetch tblstorefields from each shop’s stockmaster DB, handling missing table ---
+const storeFieldsByShop = await Promise.all(
+  dbGroups.map(async (group, idx) => {
+    const stockmasterDb = group.stockmasterDbs[0];
+    let row = {};
+    try {
+      const rows = await stockmasterDb.query(
+        `SELECT * FROM tblstorefields`,
+        { type: stockmasterDb.QueryTypes.SELECT }
+      );
+      row = rows[0] || {};
+    } catch (err) {
+      // MySQL “no such table” error code
+      const noTable =
+        err.original &&
+        (err.original.code === "ER_NO_SUCH_TABLE" || err.original.errno === 1146);
+      if (noTable) {
+        console.warn(`tblstorefields missing in ${stockmasterDb.config.database}, skipping store‐fields.`);
+      } else {
+        // rethrow any other error
+        throw err;
+      }
+    }
+
+    // prefix each field name with shop index+1
+    return Object.entries(row).reduce((acc, [col, val]) => {
+      acc[`shop${idx + 1}_${col}`] = val;
+      return acc;
+    }, {});
+  })
+);
+
 
     // --- 1) find all the matching history tables ---
     const tableInfoArray = await Promise.all(
