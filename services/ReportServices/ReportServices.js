@@ -891,8 +891,155 @@ exports.acrossStoresProductsReport = async (req) => {
   }
 };
 
+// exports.acrossRetailWholesaleByProductReport = async (req) => {
+//   // 1) parse + validate shopKeys & year
+//   const rawKeys = req.query.shopKeys;
+//   if (!rawKeys) {
+//     throw new Error("`shopKeys` is required");
+//   }
+//   const shopKeys = String(rawKeys)
+//     .split(",")
+//     .map((s) => s.trim())
+//     .filter(Boolean);
+//   if (!shopKeys.length) {
+//     throw new Error("At least one shopKey must be provided");
+//   }
+//   const yearParam = req.query.year;
+//   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+//   if (isNaN(year) || year < 2000 || year > 3000) {
+//     throw new Error("`year` must be a valid 4-digit number");
+//   }
+
+//   // 2) common setup
+//   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+//   const yearStart = `${year}-01-01 00:00:00`;
+//   const yearEnd = `${year}-12-31 23:59:59`;
+//   const expectedTables = Array.from({ length: 12 }, (_, i) => {
+//     const mm = String(i + 1).padStart(2, "0");
+//     return `${year}${mm}tbldata_current_tran`;
+//   });
+
+//   // 3) fetch each shop's per-product saleNum + qty + type
+//   const perShopData = await Promise.all(
+//     shopKeys.map(async (shopKey) => {
+//       // find its history DB
+//       const active = await databaseController.getActiveDatabases(
+//         req.user,
+//         shopKey
+//       );
+//       let historyDbName;
+//       outer: for (const grp of Object.values(active)) {
+//         for (const dbName of grp) {
+//           if (dbName.includes("history")) {
+//             historyDbName = dbName;
+//             break outer;
+//           }
+//         }
+//       }
+//       if (!historyDbName) return { shopKey, rows: [] };
+
+//       // connect
+//       const db = createSequelizeInstanceCustom({
+//         databaseName: historyDbName,
+//         host: serverHost,
+//         username: serverUser,
+//         password: serverPassword,
+//         port: serverPort,
+//       });
+
+//       // discover existing tables
+//       const exist = await db.query(
+//         `SELECT TABLE_NAME AS Name
+//          FROM INFORMATION_SCHEMA.TABLES
+//          WHERE TABLE_SCHEMA = :db
+//            AND TABLE_NAME IN (:list)`,
+//         {
+//           replacements: { db: historyDbName, list: expectedTables },
+//           type: QueryTypes.SELECT,
+//         }
+//       );
+//       const tables = exist.map((r) => r.Name);
+//       if (!tables.length) return { shopKey, rows: [] };
+
+//       // build UNION ALL with qty from Cardnum or qty, and type by CehqueNum
+//       const subq = tables
+//         .map((tbl) =>
+//           `
+//         SELECT
+//           stockcode,
+//           stockdescription,
+//           salenum,
+//           CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END AS saleQty,
+//           CASE WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail' ELSE 'wholesale' END AS saleType
+//         FROM \`${tbl}\`
+//         WHERE datetime BETWEEN :start AND :end
+//       `.trim()
+//         )
+//         .join("\nUNION ALL\n");
+
+//       const sql = `
+//         SELECT
+//           stockcode,
+//           stockdescription,
+//           COUNT(DISTINCT salenum) AS saleNum,
+//           SUM(saleQty)           AS qty,
+//           CASE WHEN MAX(CASE WHEN saleType = 'wholesale' THEN 1 ELSE 0 END) = 1 THEN 'wholesale' ELSE 'retail' END AS type
+//         FROM (
+//           ${subq}
+//         ) AS all_sales
+//         GROUP BY stockcode, stockdescription
+//       `;
+
+//       const rows = await db.query(sql, {
+//         replacements: { start: yearStart, end: yearEnd },
+//         type: QueryTypes.SELECT,
+//       });
+
+//       return { shopKey, rows };
+//     })
+//   );
+
+//   // 4) pivot into data rows
+//   const prodMap = new Map();
+//   perShopData.forEach(({ shopKey, rows }) => {
+//     rows.forEach(({ stockcode, stockdescription, saleNum, qty, type }) => {
+//       const key = `${stockcode}|||${stockdescription}`;
+//       if (!prodMap.has(key))
+//         prodMap.set(key, { stockcode, stockdescription, shops: {} });
+//       const rec = prodMap.get(key);
+//       rec.shops[shopKey] = {
+//         saleNum: Number(saleNum) || 0,
+//         qty: Number(qty) || 0,
+//         type,
+//       };
+//     });
+//   });
+
+//   const data = [];
+//   prodMap.forEach(({ stockcode, stockdescription, shops }) => {
+//     const row = { stockcode, stockdescription };
+//     shopKeys.forEach((shopKey) => {
+//       const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+//       const m = shops[shopKey] || { saleNum: 0, qty: 0, type: "retail" };
+//       row[`${k} Sale Number`] = m.saleNum;
+//       row[`${k} Quantity`] = m.qty;
+//       row[`${k} Type`] = m.type;
+//     });
+//     data.push(row);
+//   });
+
+//   // 5) sortableKeys
+//   const sortableKeys = shopKeys.flatMap((shopKey) => {
+//     const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+//     return [`${k} Sale Number`, `${k} Quantity`, `${k} Type`];
+//   });
+
+//   // 6) return
+//   return { success: true, sortableKeys, data };
+// };
+
 exports.acrossRetailWholesaleByProductReport = async (req) => {
-  // 1) parse + validate shopKeys & year
+  // 1) parse + validate shopKeys, year, and isDetailed
   const rawKeys = req.query.shopKeys;
   if (!rawKeys) {
     throw new Error("`shopKeys` is required");
@@ -904,29 +1051,30 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
   if (!shopKeys.length) {
     throw new Error("At least one shopKey must be provided");
   }
+
   const yearParam = req.query.year;
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
   if (isNaN(year) || year < 2000 || year > 3000) {
     throw new Error("`year` must be a valid 4-digit number");
   }
 
+  // new: detailed flag
+  const isDetailed = Boolean(req.query.isDetailed);
+
   // 2) common setup
   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
   const yearStart = `${year}-01-01 00:00:00`;
-  const yearEnd = `${year}-12-31 23:59:59`;
+  const yearEnd   = `${year}-12-31 23:59:59`;
   const expectedTables = Array.from({ length: 12 }, (_, i) => {
     const mm = String(i + 1).padStart(2, "0");
     return `${year}${mm}tbldata_current_tran`;
   });
 
-  // 3) fetch each shop's per-product saleNum + qty + type
+  // 3) fetch each shop's per-product retail & wholesale totals
   const perShopData = await Promise.all(
     shopKeys.map(async (shopKey) => {
       // find its history DB
-      const active = await databaseController.getActiveDatabases(
-        req.user,
-        shopKey
-      );
+      const active = await databaseController.getActiveDatabases(req.user, shopKey);
       let historyDbName;
       outer: for (const grp of Object.values(active)) {
         for (const dbName of grp) {
@@ -947,7 +1095,7 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
         port: serverPort,
       });
 
-      // discover existing tables
+      // discover tables that actually exist
       const exist = await db.query(
         `SELECT TABLE_NAME AS Name
          FROM INFORMATION_SCHEMA.TABLES
@@ -961,29 +1109,36 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
       const tables = exist.map((r) => r.Name);
       if (!tables.length) return { shopKey, rows: [] };
 
-      // build UNION ALL with qty from Cardnum or qty, and type by CehqueNum
+      // choose how we count quantity:
+      // - detailed: use Cardnum (or fallback to qty)
+      // - summary: count 1 per record
+      const saleQtyExpr = isDetailed
+        ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
+        : `1`;
+
+      // build UNION ALL subqueries
       const subq = tables
-        .map((tbl) =>
-          `
-        SELECT
-          stockcode,
-          stockdescription,
-          salenum,
-          CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END AS saleQty,
-          CASE WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail' ELSE 'wholesale' END AS saleType
-        FROM \`${tbl}\`
-        WHERE datetime BETWEEN :start AND :end
-      `.trim()
-        )
+        .map((tbl) => `
+          SELECT
+            stockcode,
+            stockdescription,
+            ${saleQtyExpr} AS saleQty,
+            CASE
+              WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail'
+              ELSE 'wholesale'
+            END AS saleType
+          FROM \`${tbl}\`
+          WHERE datetime BETWEEN :start AND :end
+        `.trim())
         .join("\nUNION ALL\n");
 
+      // wrap & aggregate into two columns: retail & wholesale
       const sql = `
         SELECT
           stockcode,
           stockdescription,
-          COUNT(DISTINCT salenum) AS saleNum,
-          SUM(saleQty)           AS qty,
-          CASE WHEN MAX(CASE WHEN saleType = 'wholesale' THEN 1 ELSE 0 END) = 1 THEN 'wholesale' ELSE 'retail' END AS type
+          SUM(CASE WHEN saleType = 'retail' THEN saleQty ELSE 0 END)     AS retail,
+          SUM(CASE WHEN saleType = 'wholesale' THEN saleQty ELSE 0 END)  AS wholesale
         FROM (
           ${subq}
         ) AS all_sales
@@ -999,18 +1154,21 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
     })
   );
 
-  // 4) pivot into data rows
+  // 4) pivot into final data rows
   const prodMap = new Map();
   perShopData.forEach(({ shopKey, rows }) => {
-    rows.forEach(({ stockcode, stockdescription, saleNum, qty, type }) => {
+    rows.forEach(({ stockcode, stockdescription, retail, wholesale }) => {
       const key = `${stockcode}|||${stockdescription}`;
-      if (!prodMap.has(key))
-        prodMap.set(key, { stockcode, stockdescription, shops: {} });
-      const rec = prodMap.get(key);
-      rec.shops[shopKey] = {
-        saleNum: Number(saleNum) || 0,
-        qty: Number(qty) || 0,
-        type,
+      if (!prodMap.has(key)) {
+        prodMap.set(key, {
+          stockcode,
+          stockdescription,
+          shops: {},
+        });
+      }
+      prodMap.get(key).shops[shopKey] = {
+        retail: Number(retail) || 0,
+        wholesale: Number(wholesale) || 0,
       };
     });
   });
@@ -1019,11 +1177,11 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
   prodMap.forEach(({ stockcode, stockdescription, shops }) => {
     const row = { stockcode, stockdescription };
     shopKeys.forEach((shopKey) => {
+      // sanitize key for column name
       const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
-      const m = shops[shopKey] || { saleNum: 0, qty: 0, type: "retail" };
-      row[`${k} Sale Number`] = m.saleNum;
-      row[`${k} Quantity`] = m.qty;
-      row[`${k} Type`] = m.type;
+      const m = shops[shopKey] || { retail: 0, wholesale: 0 };
+      row[`${k} Retail`]    = m.retail;
+      row[`${k} Wholesale`] = m.wholesale;
     });
     data.push(row);
   });
@@ -1031,12 +1189,12 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
   // 5) sortableKeys
   const sortableKeys = shopKeys.flatMap((shopKey) => {
     const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
-    return [`${k} Sale Number`, `${k} Quantity`, `${k} Type`];
+    return [`${k} Retail`, `${k} Wholesale`];
   });
 
-  // 6) return
   return { success: true, sortableKeys, data };
 };
+
 
 exports.allTblDataCancelTran = async (req) => {
   try {
