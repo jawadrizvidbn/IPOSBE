@@ -269,7 +269,7 @@ exports.getRevenueReportForYear = async (req, res) => {
  */
 exports.getTopStores = async (req, res) => {
   try {
-    const { shopKeys } = req.body;
+    const { shopKeys, isAll } = req.body;
     const yearParam = req.query.year;
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
 
@@ -463,11 +463,11 @@ exports.getTopStores = async (req, res) => {
     // 6) sort & slice for "byTurnover" (top 5) and "byTransactions" (top 10)
     const byTurnover = [...shopsMetrics]
       .sort((a, b) => b.totalSelling - a.totalSelling)
-      .slice(0, 5);
+      .slice(0, isAll ? shopsMetrics.length : 5);
 
     const byTransactions = [...shopsMetrics]
       .sort((a, b) => b.totalTransactions - a.totalTransactions)
-      .slice(0, 10);
+      .slice(0, isAll ? shopsMetrics.length : 5);
 
     // 7) return JSON
     return res.json({
