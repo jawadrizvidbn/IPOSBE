@@ -774,6 +774,8 @@ exports.acrossStoresProductsReport = async (req) => {
       })
     );
 
+    console.log(storeFieldsByShop)
+
     // 4) Per-shop product aggregations
     const perShopResults = await Promise.all(
       shopKeys.map(async (shopKey) => {
