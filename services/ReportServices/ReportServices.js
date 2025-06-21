@@ -748,6 +748,7 @@ exports.acrossStoresProductsReport = async (req) => {
         const base = raw.replace(/_?master$/i, "");
         const prefix = base.replace(/[^a-zA-Z0-9_]/g, "_");
 
+        console.log(prefix)
         let row = {};
         try {
           const rows = await stockmasterDb.query(
