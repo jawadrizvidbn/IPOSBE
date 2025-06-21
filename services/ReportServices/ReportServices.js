@@ -370,38 +370,42 @@ exports.acrossReport = async (startDate, endDate, req) => {
     // flatten history DBs for the qty queries
     const historyDbs = dbGroups.flatMap((g) => g.historyDbs);
 
-  // --- 0) fetch tblstorefields from each shop’s stockmaster DB, handling missing table ---
-const storeFieldsByShop = await Promise.all(
-  dbGroups.map(async (group, idx) => {
-    const stockmasterDb = group.stockmasterDbs[0];
-    let row = {};
-    try {
-      const rows = await stockmasterDb.query(
-        `SELECT * FROM tblstorefields`,
-        { type: stockmasterDb.QueryTypes.SELECT }
-      );
-      row = rows[0] || {};
-    } catch (err) {
-      // MySQL “no such table” error code
-      const noTable =
-        err.original &&
-        (err.original.code === "ER_NO_SUCH_TABLE" || err.original.errno === 1146);
-      if (noTable) {
-        console.warn(`tblstorefields missing in ${stockmasterDb.config.database}, skipping store‐fields.`);
-      } else {
-        // rethrow any other error
-        throw err;
-      }
-    }
+    // --- 0) fetch tblstorefields from each shop’s stockmaster DB, handling missing table ---
+    const storeFieldsByShop = await Promise.all(
+      dbGroups.map(async (group) => {
+        const stockmasterDb = group.stockmasterDbs[0];
+        const dbName = stockmasterDb.config.database;
+        let row = {};
 
-    // prefix each field name with shop index+1
-    return Object.entries(row).reduce((acc, [col, val]) => {
-      acc[`shop${idx + 1}_${col}`] = val;
-      return acc;
-    }, {});
-  })
-);
+        try {
+          const rows = await stockmasterDb.query(
+            `SELECT * FROM tblstorefields`,
+            { type: stockmasterDb.QueryTypes.SELECT }
+          );
+          row = rows[0] || {};
+        } catch (err) {
+          const noTable =
+            err.original &&
+            (err.original.code === "ER_NO_SUCH_TABLE" ||
+              err.original.errno === 1146);
+          if (noTable) {
+            console.warn(
+              `tblstorefields missing in ${dbName}, skipping store‐fields.`
+            );
+          } else {
+            throw err;
+          }
+        }
 
+        // prefix each field name with the database name
+        return Object.entries(row).reduce((acc, [col, val]) => {
+          // sanitize dbName if needed (e.g. remove dashes or spaces)
+          const safeDb = dbName.replace(/[^a-zA-Z0-9_]/g, "_");
+          acc[`${safeDb}_${col}`] = val;
+          return acc;
+        }, {});
+      })
+    );
 
     // --- 1) find all the matching history tables ---
     const tableInfoArray = await Promise.all(
@@ -471,7 +475,10 @@ const storeFieldsByShop = await Promise.all(
 
       // round and spread qtyByDb
       const roundedQtys = Object.fromEntries(
-        Object.entries(item.qtyByDb).map(([k, v]) => [k, parseFloat(v.toFixed(2))])
+        Object.entries(item.qtyByDb).map(([k, v]) => [
+          k,
+          parseFloat(v.toFixed(2)),
+        ])
       );
 
       return {
@@ -496,7 +503,6 @@ const storeFieldsByShop = await Promise.all(
     throw new Error(err.message);
   }
 };
-
 
 /**
  * POST /api/reports/acrossStoresProducts
@@ -693,50 +699,52 @@ exports.acrossStoresProductsReport = async (req) => {
   }
 };
 
-
 exports.acrossRetailWholesaleByProductReport = async (req) => {
   // 1) parse + validate shopKeys & year
-  const rawKeys = req.query.shopKeys
+  const rawKeys = req.query.shopKeys;
   if (!rawKeys) {
-    throw new Error('`shopKeys` is required')
+    throw new Error("`shopKeys` is required");
   }
   const shopKeys = String(rawKeys)
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (!shopKeys.length) {
-    throw new Error('At least one shopKey must be provided')
+    throw new Error("At least one shopKey must be provided");
   }
-  const yearParam = req.query.year
-  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear()
+  const yearParam = req.query.year;
+  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
   if (isNaN(year) || year < 2000 || year > 3000) {
-    throw new Error('`year` must be a valid 4-digit number')
+    throw new Error("`year` must be a valid 4-digit number");
   }
 
   // 2) common setup
-  const { serverHost, serverUser, serverPassword, serverPort } = req.user
-  const yearStart = `${year}-01-01 00:00:00`
-  const yearEnd = `${year}-12-31 23:59:59`
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+  const yearStart = `${year}-01-01 00:00:00`;
+  const yearEnd = `${year}-12-31 23:59:59`;
   const expectedTables = Array.from({ length: 12 }, (_, i) => {
-    const mm = String(i + 1).padStart(2, '0')
-    return `${year}${mm}tbldata_current_tran`
-  })
+    const mm = String(i + 1).padStart(2, "0");
+    return `${year}${mm}tbldata_current_tran`;
+  });
 
   // 3) fetch each shop's per-product saleNum + qty + type
   const perShopData = await Promise.all(
-    shopKeys.map(async shopKey => {
+    shopKeys.map(async (shopKey) => {
       // find its history DB
-      const active = await databaseController.getActiveDatabases(req.user, shopKey)
-      let historyDbName
+      const active = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+      let historyDbName;
       outer: for (const grp of Object.values(active)) {
         for (const dbName of grp) {
-          if (dbName.includes('history')) {
-            historyDbName = dbName
-            break outer
+          if (dbName.includes("history")) {
+            historyDbName = dbName;
+            break outer;
           }
         }
       }
-      if (!historyDbName) return { shopKey, rows: [] }
+      if (!historyDbName) return { shopKey, rows: [] };
 
       // connect
       const db = createSequelizeInstanceCustom({
@@ -744,8 +752,8 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
         host: serverHost,
         username: serverUser,
         password: serverPassword,
-        port: serverPort
-      })
+        port: serverPort,
+      });
 
       // discover existing tables
       const exist = await db.query(
@@ -755,14 +763,16 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
            AND TABLE_NAME IN (:list)`,
         {
           replacements: { db: historyDbName, list: expectedTables },
-          type: QueryTypes.SELECT
+          type: QueryTypes.SELECT,
         }
-      )
-      const tables = exist.map(r => r.Name)
-      if (!tables.length) return { shopKey, rows: [] }
+      );
+      const tables = exist.map((r) => r.Name);
+      if (!tables.length) return { shopKey, rows: [] };
 
       // build UNION ALL with qty from Cardnum or qty, and type by CehqueNum
-      const subq = tables.map(tbl => `
+      const subq = tables
+        .map((tbl) =>
+          `
         SELECT
           stockcode,
           stockdescription,
@@ -771,7 +781,9 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
           CASE WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail' ELSE 'wholesale' END AS saleType
         FROM \`${tbl}\`
         WHERE datetime BETWEEN :start AND :end
-      `.trim()).join('\nUNION ALL\n')
+      `.trim()
+        )
+        .join("\nUNION ALL\n");
 
       const sql = `
         SELECT
@@ -784,51 +796,55 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
           ${subq}
         ) AS all_sales
         GROUP BY stockcode, stockdescription
-      `
+      `;
 
       const rows = await db.query(sql, {
         replacements: { start: yearStart, end: yearEnd },
-        type: QueryTypes.SELECT
-      })
+        type: QueryTypes.SELECT,
+      });
 
-      return { shopKey, rows }
+      return { shopKey, rows };
     })
-  )
+  );
 
   // 4) pivot into data rows
-  const prodMap = new Map()
+  const prodMap = new Map();
   perShopData.forEach(({ shopKey, rows }) => {
     rows.forEach(({ stockcode, stockdescription, saleNum, qty, type }) => {
-      const key = `${stockcode}|||${stockdescription}`
-      if (!prodMap.has(key)) prodMap.set(key, { stockcode, stockdescription, shops: {} })
-      const rec = prodMap.get(key)
-      rec.shops[shopKey] = { saleNum: Number(saleNum) || 0, qty: Number(qty) || 0, type }
-    })
-  })
+      const key = `${stockcode}|||${stockdescription}`;
+      if (!prodMap.has(key))
+        prodMap.set(key, { stockcode, stockdescription, shops: {} });
+      const rec = prodMap.get(key);
+      rec.shops[shopKey] = {
+        saleNum: Number(saleNum) || 0,
+        qty: Number(qty) || 0,
+        type,
+      };
+    });
+  });
 
-  const data = []
+  const data = [];
   prodMap.forEach(({ stockcode, stockdescription, shops }) => {
-    const row = { stockcode, stockdescription }
-    shopKeys.forEach(shopKey => {
-      const k = shopKey.replace(/[^A-Za-z0-9]/g, '')
-      const m = shops[shopKey] || { saleNum: 0, qty: 0, type: 'retail' }
-      row[`${k} Sale Number`] = m.saleNum
-      row[`${k} Quantity`]    = m.qty
-      row[`${k} Type`]        = m.type
-    })
-    data.push(row)
-  })
+    const row = { stockcode, stockdescription };
+    shopKeys.forEach((shopKey) => {
+      const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+      const m = shops[shopKey] || { saleNum: 0, qty: 0, type: "retail" };
+      row[`${k} Sale Number`] = m.saleNum;
+      row[`${k} Quantity`] = m.qty;
+      row[`${k} Type`] = m.type;
+    });
+    data.push(row);
+  });
 
   // 5) sortableKeys
-  const sortableKeys = shopKeys.flatMap(shopKey => {
-    const k = shopKey.replace(/[^A-Za-z0-9]/g, '')
-    return [`${k} Sale Number`, `${k} Quantity`, `${k} Type`]
-  })
+  const sortableKeys = shopKeys.flatMap((shopKey) => {
+    const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+    return [`${k} Sale Number`, `${k} Quantity`, `${k} Type`];
+  });
 
   // 6) return
-  return { success: true, sortableKeys, data }
-}
-
+  return { success: true, sortableKeys, data };
+};
 
 exports.allTblDataCancelTran = async (req) => {
   try {
