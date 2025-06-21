@@ -397,10 +397,10 @@ exports.acrossReport = async (startDate, endDate, req) => {
           }
         }
 
-        // prefix each field name with the database name
+
         return Object.entries(row).reduce((acc, [col, val]) => {
-          // sanitize dbName if needed (e.g. remove dashes or spaces)
-          const safeDb = dbName.replace(/[^a-zA-Z0-9_]/g, "_");
+          const baseDb = dbName.replace(/_?master$/i, "");
+          const safeDb = baseDb.replace(/[^a-zA-Z0-9_]/g, "_");
           acc[`${safeDb}_${col}`] = val;
           return acc;
         }, {});
