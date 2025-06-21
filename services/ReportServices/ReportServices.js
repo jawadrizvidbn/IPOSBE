@@ -536,185 +536,142 @@ exports.acrossStoresProductsReport = async (req) => {
   }
 };
 
-/**
- * GET /api/reports/retailWholesaleByProduct
- * Query params:
- *   shopKeys=SHOP_A,SHOP_B,…  (required)
- *   year=2025                  (optional, defaults to current year)
- *
- * Response:
- * {
- *   success: true,
- *   sortableKeys: ["SHOPA Sale Number","SHOPA Quantity","SHOPA Type", ...],
- *   data: [
- *     {
- *       stockcode:        "ABC123",
- *       stockdescription: "Widget A",
- *       SHOPA Sale Number:  12,
- *       SHOPA Quantity:     8,
- *       SHOPA Type:     "retail",
- *       SHOPB Sale Number: 34,
- *       SHOPB Quantity:    71,
- *       SHOPB Type:   "wholesale",
- *       … for each shopKey …
- *     },
- *     … more products …
- *   ]
- * }
- */
+
 exports.acrossRetailWholesaleByProductReport = async (req) => {
-  try {
-    // 1) parse + validate shopKeys & year
-    const rawKeys = req.query.shopKeys;
-    if (!rawKeys) {
-      throw new Error("`shopKeys` is required");
-    }
-    const shopKeys = String(rawKeys)
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!shopKeys.length) {
-      throw new Error("At least one shopKey must be provided");
-    }
-    const yearParam = req.query.year;
-    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-    if (isNaN(year) || year < 2000 || year > 3000) {
-      throw new Error("`year` must be a valid 4-digit number");
-    }
-
-    // 2) common setup
-    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
-    const yearStart = `${year}-01-01 00:00:00`;
-    const yearEnd = `${year}-12-31 23:59:59`;
-    const expectedTables = Array.from({ length: 12 }, (_, i) => {
-      const mm = String(i + 1).padStart(2, "0");
-      return `${year}${mm}tbldata_current_tran`;
-    });
-
-    // 3) fetch each shop's per-product saleNum + qty
-    const perShopData = await Promise.all(
-      shopKeys.map(async (shopKey) => {
-        // a) find its history DB
-        const active = await databaseController.getActiveDatabases(
-          req.user,
-          shopKey
-        );
-        let historyDbName;
-        outer: for (const grp of Object.values(active)) {
-          for (const db of grp) {
-            if (db.includes("history")) {
-              historyDbName = db;
-              break outer;
-            }
-          }
-        }
-        if (!historyDbName) return { shopKey, rows: [] };
-
-        // b) connect
-        const db = createSequelizeInstanceCustom({
-          databaseName: historyDbName,
-          host: serverHost,
-          username: serverUser,
-          password: serverPassword,
-          port: serverPort,
-        });
-
-        // c) which of the 12 tables exist?
-        const exist = await db.query(
-          `SELECT TABLE_NAME AS Name
-           FROM INFORMATION_SCHEMA.TABLES
-           WHERE TABLE_SCHEMA = :db
-             AND TABLE_NAME IN (:list)`,
-          {
-            replacements: { db: historyDbName, list: expectedTables },
-            type: QueryTypes.SELECT,
-          }
-        );
-        const tables = exist.map((r) => r.Name);
-        if (!tables.length) return { shopKey, rows: [] };
-
-        // d) UNION ALL per-product
-        const subq = tables
-          .map((tbl) =>
-            `
-          SELECT
-            stockcode,
-            stockdescription,
-            salenum,
-            qty
-          FROM \`${tbl}\`
-          WHERE datetime BETWEEN :start AND :end
-        `.trim()
-          )
-          .join("UNION ALL");
-
-        const sql = `
-          SELECT
-            stockcode,
-            stockdescription,
-            COUNT(DISTINCT salenum) AS saleNum,
-            SUM(qty)                 AS qty
-          FROM (
-            ${subq}
-          ) AS all_sales
-          GROUP BY stockcode, stockdescription
-        `;
-        const rows = await db.query(sql, {
-          replacements: { start: yearStart, end: yearEnd },
-          type: QueryTypes.SELECT,
-        });
-
-        return { shopKey, rows };
-      })
-    );
-
-    // 4) pivot into product map
-    const prodMap = new Map();
-    perShopData.forEach(({ shopKey, rows }) => {
-      rows.forEach(({ stockcode, stockdescription, saleNum, qty }) => {
-        const key = `${stockcode}|||${stockdescription}`;
-        if (!prodMap.has(key)) {
-          prodMap.set(key, {
-            stockcode,
-            stockdescription,
-            shops: {},
-          });
-        }
-        const rec = prodMap.get(key);
-        const nSale = Number(saleNum) || 0;
-        const nQty = Number(qty) || 0;
-        rec.shops[shopKey] = { saleNum: nSale, qty: nQty };
-      });
-    });
-
-    // 5) assemble final data array with space-separated keys
-    const data = [];
-    prodMap.forEach(({ stockcode, stockdescription, shops }) => {
-      const row = { stockcode, stockdescription };
-      shopKeys.forEach((shopKey) => {
-        // remove non-alphanumeric
-        const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
-        const m = shops[shopKey] || { saleNum: 0, qty: 0 };
-        row[`${k} Sale Number`] = m.saleNum;
-        row[`${k} Quantity`] = m.qty;
-        row[`${k} Type`] = m.qty >= 10 ? "wholesale" : "retail";
-      });
-      data.push(row);
-    });
-
-    // 6) sortableKeys = same flat keys (excluding stockcode/description)
-    const sortableKeys = shopKeys.flatMap((shopKey) => {
-      const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
-      return [`${k} Sale Number`, `${k} Quantity`, `${k} Type`];
-    });
-
-    // 7) respond
-    return { success: true, sortableKeys, data };
-  } catch (err) {
-    console.error("retailWholesaleByProductReport error:", err);
-    throw err;
+  // 1) parse + validate shopKeys & year
+  const rawKeys = req.query.shopKeys
+  if (!rawKeys) {
+    throw new Error('`shopKeys` is required')
   }
-};
+  const shopKeys = String(rawKeys)
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+  if (!shopKeys.length) {
+    throw new Error('At least one shopKey must be provided')
+  }
+  const yearParam = req.query.year
+  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear()
+  if (isNaN(year) || year < 2000 || year > 3000) {
+    throw new Error('`year` must be a valid 4-digit number')
+  }
+
+  // 2) common setup
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user
+  const yearStart = `${year}-01-01 00:00:00`
+  const yearEnd = `${year}-12-31 23:59:59`
+  const expectedTables = Array.from({ length: 12 }, (_, i) => {
+    const mm = String(i + 1).padStart(2, '0')
+    return `${year}${mm}tbldata_current_tran`
+  })
+
+  // 3) fetch each shop's per-product saleNum + qty + type
+  const perShopData = await Promise.all(
+    shopKeys.map(async shopKey => {
+      // find its history DB
+      const active = await databaseController.getActiveDatabases(req.user, shopKey)
+      let historyDbName
+      outer: for (const grp of Object.values(active)) {
+        for (const dbName of grp) {
+          if (dbName.includes('history')) {
+            historyDbName = dbName
+            break outer
+          }
+        }
+      }
+      if (!historyDbName) return { shopKey, rows: [] }
+
+      // connect
+      const db = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort
+      })
+
+      // discover existing tables
+      const exist = await db.query(
+        `SELECT TABLE_NAME AS Name
+         FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = :db
+           AND TABLE_NAME IN (:list)`,
+        {
+          replacements: { db: historyDbName, list: expectedTables },
+          type: QueryTypes.SELECT
+        }
+      )
+      const tables = exist.map(r => r.Name)
+      if (!tables.length) return { shopKey, rows: [] }
+
+      // build UNION ALL with qty from Cardnum or qty, and type by CehqueNum
+      const subq = tables.map(tbl => `
+        SELECT
+          stockcode,
+          stockdescription,
+          salenum,
+          CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END AS saleQty,
+          CASE WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail' ELSE 'wholesale' END AS saleType
+        FROM \`${tbl}\`
+        WHERE datetime BETWEEN :start AND :end
+      `.trim()).join('\nUNION ALL\n')
+
+      const sql = `
+        SELECT
+          stockcode,
+          stockdescription,
+          COUNT(DISTINCT salenum) AS saleNum,
+          SUM(saleQty)           AS qty,
+          CASE WHEN MAX(CASE WHEN saleType = 'wholesale' THEN 1 ELSE 0 END) = 1 THEN 'wholesale' ELSE 'retail' END AS type
+        FROM (
+          ${subq}
+        ) AS all_sales
+        GROUP BY stockcode, stockdescription
+      `
+
+      const rows = await db.query(sql, {
+        replacements: { start: yearStart, end: yearEnd },
+        type: QueryTypes.SELECT
+      })
+
+      return { shopKey, rows }
+    })
+  )
+
+  // 4) pivot into data rows
+  const prodMap = new Map()
+  perShopData.forEach(({ shopKey, rows }) => {
+    rows.forEach(({ stockcode, stockdescription, saleNum, qty, type }) => {
+      const key = `${stockcode}|||${stockdescription}`
+      if (!prodMap.has(key)) prodMap.set(key, { stockcode, stockdescription, shops: {} })
+      const rec = prodMap.get(key)
+      rec.shops[shopKey] = { saleNum: Number(saleNum) || 0, qty: Number(qty) || 0, type }
+    })
+  })
+
+  const data = []
+  prodMap.forEach(({ stockcode, stockdescription, shops }) => {
+    const row = { stockcode, stockdescription }
+    shopKeys.forEach(shopKey => {
+      const k = shopKey.replace(/[^A-Za-z0-9]/g, '')
+      const m = shops[shopKey] || { saleNum: 0, qty: 0, type: 'retail' }
+      row[`${k} Sale Number`] = m.saleNum
+      row[`${k} Quantity`]    = m.qty
+      row[`${k} Type`]        = m.type
+    })
+    data.push(row)
+  })
+
+  // 5) sortableKeys
+  const sortableKeys = shopKeys.flatMap(shopKey => {
+    const k = shopKey.replace(/[^A-Za-z0-9]/g, '')
+    return [`${k} Sale Number`, `${k} Quantity`, `${k} Type`]
+  })
+
+  // 6) return
+  return { success: true, sortableKeys, data }
+}
+
 
 exports.allTblDataCancelTran = async (req) => {
   try {
