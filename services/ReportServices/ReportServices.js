@@ -730,7 +730,7 @@ exports.acrossStoresProductsReport = async (req) => {
         // pick the first stockmaster DB
         const stockmasterName = Object.values(active)
           .flat()
-          .find((db) => db.toLowerCase().includes("stockmaster"));
+          .find((db) => db.toLowerCase().includes("master"));
         if (!stockmasterName) {
           return {};  // no stockmaster → no fields
         }
@@ -748,7 +748,7 @@ exports.acrossStoresProductsReport = async (req) => {
         const base = raw.replace(/_?master$/i, "");
         const prefix = base.replace(/[^a-zA-Z0-9_]/g, "_");
 
-        console.log(prefix)
+
         let row = {};
         try {
           const rows = await stockmasterDb.query(
@@ -775,7 +775,7 @@ exports.acrossStoresProductsReport = async (req) => {
       })
     );
 
-    console.log(storeFieldsByShop)
+
 
     // 4) Per-shop product aggregations
     const perShopResults = await Promise.all(
