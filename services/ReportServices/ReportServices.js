@@ -1220,7 +1220,7 @@ exports.acrossStockOnHandReport = async (req) => {
         const active = await databaseController.getActiveDatabases(req.user, shopKey);
         const stockmasterName = Object.values(active)
           .flat()
-          .find((db) => db.toLowerCase().includes("stockmaster"));
+          .find((db) => db.toLowerCase().includes("master"));
         if (!stockmasterName) {
           // no master DB → no data
           return { shopKey, rows: [] };
