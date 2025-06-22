@@ -1195,6 +1195,124 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
   return { success: true, sortableKeys, data };
 };
 
+exports.acrossStockOnHandReport = async (req) => {
+  try {
+    // 1) parse + validate shopKeys
+    const rawKeys = req.query.shopKeys;
+    if (!rawKeys) {
+      throw new Error("`shopKeys` is required");
+    }
+    const shopKeys = String(rawKeys)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!shopKeys.length) {
+      throw new Error("At least one shopKey must be provided");
+    }
+
+    // 2) connection info
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+
+    // 3) fetch each shop's master‐db product fields
+    const perShopData = await Promise.all(
+      shopKeys.map(async (shopKey) => {
+        // find its stockmaster DB
+        const active = await databaseController.getActiveDatabases(req.user, shopKey);
+        const stockmasterName = Object.values(active)
+          .flat()
+          .find((db) => db.toLowerCase().includes("stockmaster"));
+        if (!stockmasterName) {
+          // no master DB → no data
+          return { shopKey, rows: [] };
+        }
+
+        // connect to master DB
+        const db = createSequelizeInstanceCustom({
+          databaseName: stockmasterName,
+          host: serverHost,
+          username: serverUser,
+          password: serverPassword,
+          port: serverPort,
+        });
+
+        // pull the three fields from tblproducts
+        let rows = [];
+        try {
+          rows = await db.query(
+            `
+            SELECT
+              StockCode           AS stockcode,
+              Description1        AS stockdescription,
+              StockonHand         AS stockOnHand,
+              DefaultSellingPrice AS defaultSellingPrice,
+              LastCostPrice       AS lastCostPrice
+            FROM tblproducts
+            `,
+            { type: db.QueryTypes.SELECT }
+          );
+        } catch (err) {
+          // handle missing table gracefully
+          const noTable =
+            err.original &&
+            (err.original.code === "ER_NO_SUCH_TABLE" || err.original.errno === 1146);
+          if (noTable) {
+            console.warn(`tblproducts missing in ${stockmasterName}, skipping.`);
+          } else {
+            throw err;
+          }
+        }
+
+        return { shopKey, rows };
+      })
+    );
+
+    // 4) pivot into a product‐centric map
+    const prodMap = new Map();
+    perShopData.forEach(({ shopKey, rows }) => {
+      rows.forEach(({ stockcode, stockdescription, stockOnHand, defaultSellingPrice, lastCostPrice }) => {
+        const key = `${stockcode}|||${stockdescription}`;
+        if (!prodMap.has(key)) {
+          prodMap.set(key, {
+            stockcode,
+            stockdescription,
+            shops: {},
+          });
+        }
+        prodMap.get(key).shops[shopKey] = {
+          stockOnHand: Number(stockOnHand) || 0,
+          defaultSellingPrice: Number(defaultSellingPrice) || 0,
+          lastCostPrice: Number(lastCostPrice) || 0,
+        };
+      });
+    });
+
+    // 5) build final array, merging in each shop’s values
+    const data = [];
+    prodMap.forEach(({ stockcode, stockdescription, shops }) => {
+      const row = { stockcode, stockdescription };
+      shopKeys.forEach((shopKey) => {
+        const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+        const m = shops[shopKey] || { stockOnHand: 0, defaultSellingPrice: 0, lastCostPrice: 0 };
+        row[`${k} Stock on hand`]  = m.stockOnHand;
+        row[`${k} Selling Price`]  = m.defaultSellingPrice;
+        row[`${k} Cost Price`]     = m.lastCostPrice;
+      });
+      data.push(row);
+    });
+
+    // 6) sortableKeys for the grid
+    const sortableKeys = shopKeys.flatMap((shopKey) => {
+      const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+      return [`${k} Stock on hand`, `${k} Selling Price`, `${k} Cost Price`];
+    });
+
+    return { success: true, sortableKeys, data };
+  } catch (err) {
+    throw err;
+  }
+};
+
+
 
 exports.allTblDataCancelTran = async (req) => {
   try {

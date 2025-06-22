@@ -154,6 +154,11 @@ router.get(
   reportController.acrossRetailWholesaleByProductReport
 );
 router.get(
+  "/acrossStockOnHandReport",
+  checkSuperadmin,
+  reportController.acrossStockOnHandReport
+);
+router.get(
   "/tblDataCancelTran",
   checkSuperadmin,
   reportController.findAllTblDataCancelTran
