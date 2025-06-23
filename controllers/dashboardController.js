@@ -271,6 +271,8 @@ exports.getTopStores = async (req, res) => {
   try {
     const { shopKeys, isAll } = req.body;
     const yearParam = req.query.year;
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
 
     // 1) Validate shopKeys array
@@ -291,8 +293,8 @@ exports.getTopStores = async (req, res) => {
     }
 
     // 3) Precompute the start/end timestamps for SQL filters
-    const yearStart = `${year}-01-01 00:00:00`;
-    const yearEnd = `${year}-12-31 23:59:59`;
+    const yearStart = startDate ? startDate : `${year}-01-01 00:00:00`;
+    const yearEnd = endDate ? endDate : `${year}-12-31 23:59:59`;
 
     // 4) For each shopKey, build a Promise that:
     //    a) finds its history DB name
