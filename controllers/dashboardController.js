@@ -294,10 +294,10 @@ exports.getTopStores = async (req, res) => {
     }
 
     // 3) Precompute the start/end timestamps for SQL filters
-    const yearStart = startDate ? startDate : `${year}-01-01 00:00:00`;
-    const yearEnd = endDate ? endDate : `${year}-12-31 23:59:59`;
-
-    console.log({ yearStart, yearEnd });
+    const yearStart = startDate
+      ? `${startDate} 00:00:00`
+      : `${year}-01-01 00:00:00`;
+    const yearEnd = endDate ? `${endDate} 23:59:59` : `${year}-12-31 23:59:59`;
 
     // 4) For each shopKey, build a Promise that:
     //    a) finds its history DB name
@@ -424,7 +424,7 @@ exports.getTopStores = async (req, res) => {
       //       subCost        = SUM(averagecostprice * qty)
       //       subSelling     = SUM(linetotal)
       //       subTransactions= COUNT(DISTINCT transactionnum)
-      console.log({ tablesInYear });
+
       const subqueries = tablesInYear.map((tbl) =>
         `
         SELECT
