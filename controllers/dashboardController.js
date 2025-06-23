@@ -296,6 +296,8 @@ exports.getTopStores = async (req, res) => {
     const yearStart = startDate ? startDate : `${year}-01-01 00:00:00`;
     const yearEnd = endDate ? endDate : `${year}-12-31 23:59:59`;
 
+    console.log({ yearStart, yearEnd });
+
     // 4) For each shopKey, build a Promise that:
     //    a) finds its history DB name
     //    b) lists all monthly tables for that DB
