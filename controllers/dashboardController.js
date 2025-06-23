@@ -411,6 +411,7 @@ exports.getTopStores = async (req, res) => {
       //       subCost        = SUM(averagecostprice * qty)
       //       subSelling     = SUM(linetotal)
       //       subTransactions= COUNT(DISTINCT transactionnum)
+      console.log({ tablesInYear });
       const subqueries = tablesInYear.map((tbl) =>
         `
         SELECT
