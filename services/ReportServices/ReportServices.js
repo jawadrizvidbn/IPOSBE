@@ -720,6 +720,7 @@ exports.acrossStoresProductsReport = async (req) => {
       const mm = String(i + 1).padStart(2, "0");
       return `${year}${mm}tbldata_current_tran`;
     });
+    console.log({ expectedTables });
 
     // 3) Fetch tblstorefields for each shopKey, prefixing by DB name (sans “_master”)
     const storeFieldsByShop = await Promise.all(
