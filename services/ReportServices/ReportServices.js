@@ -12,6 +12,7 @@ const { QueryTypes } = require("sequelize");
 const dateFns = require("date-fns");
 const { format, getYear, getMonth, addDays } = require("date-fns");
 const createSequelizeInstanceCustom = require("../../utils/sequelizeInstanceCustom");
+const { getYearAndMonthRange } = require("../../utils/utils");
 
 exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
   try {
@@ -700,7 +701,8 @@ exports.acrossReport = async (startDate, endDate, req) => {
 
 exports.acrossStoresProductsReport = async (req) => {
   try {
-    const yearParam = req.query.year;
+    const startDate = req.query?.startDate;
+    const endDate = req.query?.endDate;
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
 
     // 1) Parse shopKeys
@@ -709,17 +711,12 @@ exports.acrossStoresProductsReport = async (req) => {
       .map((k) => k.trim())
       .filter(Boolean);
 
-    // 2) Validate year
-    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-    if (isNaN(year) || year < 2000 || year > 3000) {
-      throw new Error("`year` must be a valid 4-digit number");
-    }
-    const yearStart = `${year}-01-01 00:00:00`;
-    const yearEnd = `${year}-12-31 23:59:59`;
-    const expectedTables = Array.from({ length: 12 }, (_, i) => {
-      const mm = String(i + 1).padStart(2, "0");
-      return `${year}${mm}tbldata_current_tran`;
-    });
+    const yearStart = startDate ? `${startDate} 00:00:00` : null;
+    const yearEnd = endDate ? `${endDate} 23:59:59` : null;
+    const { year, months } = getYearAndMonthRange(startDate, endDate);
+    const expectedTables = months.map(
+      (month) => `${year}${month}tbldata_current_tran`
+    );
     console.log({ expectedTables });
 
     // 3) Fetch tblstorefields for each shopKey, prefixing by DB name (sans “_master”)
