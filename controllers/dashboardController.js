@@ -7,6 +7,7 @@ const {
 } = require("../utils/databaseHelper");
 const createSequelizeInstanceCustom = require("../utils/sequelizeInstanceCustom");
 const databaseController = require("./databaseController");
+const { getYearAndMonthRange } = require("../utils/utils");
 
 exports.salesOverview = async (req, res) => {
   const { shopKey, duration } = req.query;
@@ -271,8 +272,8 @@ exports.getTopStores = async (req, res) => {
   try {
     const { shopKeys, isAll } = req.body;
     const yearParam = req.query.year;
-    const startDate = req.query.startDate;
-    const endDate = req.query.endDate;
+    const startDate = req.query?.startDate;
+    const endDate = req.query?.endDate;
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
 
     // 1) Validate shopKeys array
@@ -361,9 +362,17 @@ exports.getTopStores = async (req, res) => {
       });
       // 4c) figure out the twelve expected "YYYYMMtbldata_current_tran" table names for `year`
       const expectedTables = [];
-      for (let m = 1; m <= 12; ++m) {
-        const mm = String(m).padStart(2, "0");
-        expectedTables.push(`${year}${mm}tbldata_current_tran`);
+
+      if (startDate && endDate) {
+        const { year, months } = getYearAndMonthRange(startDate, endDate);
+        for (const month of months) {
+          expectedTables.push(`${year}${month}tbldata_current_tran`);
+        }
+      } else {
+        for (let m = 1; m <= 12; ++m) {
+          const mm = String(m).padStart(2, "0");
+          expectedTables.push(`${year}${mm}tbldata_current_tran`);
+        }
       }
 
       try {
