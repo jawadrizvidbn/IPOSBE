@@ -1345,7 +1345,7 @@ exports.acrossStockOnHandReport = async (req) => {
         row[`${k} Cost Price`] = m.lastCostPrice;
         row[`${k} Selling Price`] = m.defaultSellingPrice;
         row[`${k} Total Cost`] = m.lastCostPrice * m.stockOnHand;
-        row[`${k} Total Selling Price`] = m.defaultSellingPrice * m.stockOnHand;
+        row[`${k} Total Selling`] = m.defaultSellingPrice * m.stockOnHand;
       });
       data.push(row);
     });
