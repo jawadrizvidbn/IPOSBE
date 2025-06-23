@@ -397,7 +397,6 @@ exports.acrossReport = async (startDate, endDate, req) => {
           }
         }
 
-
         return Object.entries(row).reduce((acc, [col, val]) => {
           const baseDb = dbName.replace(/_?master$/i, "");
           const safeDb = baseDb.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -716,7 +715,7 @@ exports.acrossStoresProductsReport = async (req) => {
       throw new Error("`year` must be a valid 4-digit number");
     }
     const yearStart = `${year}-01-01 00:00:00`;
-    const yearEnd   = `${year}-12-31 23:59:59`;
+    const yearEnd = `${year}-12-31 23:59:59`;
     const expectedTables = Array.from({ length: 12 }, (_, i) => {
       const mm = String(i + 1).padStart(2, "0");
       return `${year}${mm}tbldata_current_tran`;
@@ -726,13 +725,16 @@ exports.acrossStoresProductsReport = async (req) => {
     const storeFieldsByShop = await Promise.all(
       shopKeys.map(async (shopKey) => {
         // find all active DBs for this shopKey
-        const active = await databaseController.getActiveDatabases(req.user, shopKey);
+        const active = await databaseController.getActiveDatabases(
+          req.user,
+          shopKey
+        );
         // pick the first stockmaster DB
         const stockmasterName = Object.values(active)
           .flat()
           .find((db) => db.toLowerCase().includes("master"));
         if (!stockmasterName) {
-          return {};  // no stockmaster → no fields
+          return {}; // no stockmaster → no fields
         }
 
         const stockmasterDb = createSequelizeInstanceCustom({
@@ -748,7 +750,6 @@ exports.acrossStoresProductsReport = async (req) => {
         const base = raw.replace(/_?master$/i, "");
         const prefix = base.replace(/[^a-zA-Z0-9_]/g, "_");
 
-
         let row = {};
         try {
           const rows = await stockmasterDb.query(
@@ -759,7 +760,8 @@ exports.acrossStoresProductsReport = async (req) => {
         } catch (err) {
           const noTable =
             err.original &&
-            (err.original.code === "ER_NO_SUCH_TABLE" || err.original.errno === 1146);
+            (err.original.code === "ER_NO_SUCH_TABLE" ||
+              err.original.errno === 1146);
           if (noTable) {
             console.warn(`tblstorefields missing in ${raw}, skipping.`);
           } else {
@@ -775,13 +777,14 @@ exports.acrossStoresProductsReport = async (req) => {
       })
     );
 
-
-
     // 4) Per-shop product aggregations
     const perShopResults = await Promise.all(
       shopKeys.map(async (shopKey) => {
         // find the history DB name
-        const active = await databaseController.getActiveDatabases(req.user, shopKey);
+        const active = await databaseController.getActiveDatabases(
+          req.user,
+          shopKey
+        );
         const historyName = Object.values(active)
           .flat()
           .find((db) => db.toLowerCase().includes("history"));
@@ -812,7 +815,9 @@ exports.acrossStoresProductsReport = async (req) => {
         if (!tablesInYear.length) return { shopKey, data: [] };
 
         // build & run UNION-ALL per month
-        const unionSql = tablesInYear.map((tbl) => `
+        const unionSql = tablesInYear
+          .map((tbl) =>
+            `
           SELECT
             stockcode,
             stockdescription,
@@ -822,7 +827,9 @@ exports.acrossStoresProductsReport = async (req) => {
           FROM \`${tbl}\`
           WHERE datetime BETWEEN :start AND :end
           GROUP BY stockcode, stockdescription
-        `.trim()).join("\nUNION ALL\n");
+        `.trim()
+          )
+          .join("\nUNION ALL\n");
 
         const finalSql = `
           SELECT
@@ -848,15 +855,29 @@ exports.acrossStoresProductsReport = async (req) => {
     // 5) Pivot products across shops
     const prodMap = new Map();
     perShopResults.forEach(({ shopKey, data }) =>
-      data.forEach(({ stockcode, stockdescription, quantity, totalCost, totalSelling }) => {
-        const key = `${stockcode}|||${stockdescription}`;
-        if (!prodMap.has(key)) {
-          prodMap.set(key, { stockcode, stockdescription, shops: {} });
+      data.forEach(
+        ({
+          stockcode,
+          stockdescription,
+          quantity,
+          totalCost,
+          totalSelling,
+        }) => {
+          const key = `${stockcode}|||${stockdescription}`;
+          if (!prodMap.has(key)) {
+            prodMap.set(key, { stockcode, stockdescription, shops: {} });
+          }
+          const rec = prodMap.get(key);
+          const qty = Number(quantity) || 0,
+            tc = Number(totalCost) || 0,
+            ts = Number(totalSelling) || 0;
+          rec.shops[shopKey] = {
+            quantity: qty,
+            totalCost: tc,
+            totalSelling: ts,
+          };
         }
-        const rec = prodMap.get(key);
-        const qty = Number(quantity)||0, tc = Number(totalCost)||0, ts = Number(totalSelling)||0;
-        rec.shops[shopKey] = { quantity: qty, totalCost: tc, totalSelling: ts };
-      })
+      )
     );
 
     // 6) Build final array, merging in store-fields by index
@@ -864,10 +885,14 @@ exports.acrossStoresProductsReport = async (req) => {
     prodMap.forEach(({ stockcode, stockdescription, shops }) => {
       const row = { stockcode, stockdescription };
       shopKeys.forEach((shopKey, idx) => {
-        const m = shops[shopKey] || { quantity:0, totalCost:0, totalSelling:0 };
-        row[`${shopKey} Quantity`]     = m.quantity;
-        row[`${shopKey} Total Cost`]   = m.totalCost;
-        row[`${shopKey} Total Selling`]= m.totalSelling;
+        const m = shops[shopKey] || {
+          quantity: 0,
+          totalCost: 0,
+          totalSelling: 0,
+        };
+        row[`${shopKey} Quantity`] = m.quantity;
+        row[`${shopKey} Total Cost`] = m.totalCost;
+        row[`${shopKey} Total Selling`] = m.totalSelling;
 
         // merge that shop’s storeFields (same index in storeFieldsByShop)
         Object.assign(row, storeFieldsByShop[idx] || {});
@@ -1064,7 +1089,7 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
   // 2) common setup
   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
   const yearStart = `${year}-01-01 00:00:00`;
-  const yearEnd   = `${year}-12-31 23:59:59`;
+  const yearEnd = `${year}-12-31 23:59:59`;
   const expectedTables = Array.from({ length: 12 }, (_, i) => {
     const mm = String(i + 1).padStart(2, "0");
     return `${year}${mm}tbldata_current_tran`;
@@ -1074,7 +1099,10 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
   const perShopData = await Promise.all(
     shopKeys.map(async (shopKey) => {
       // find its history DB
-      const active = await databaseController.getActiveDatabases(req.user, shopKey);
+      const active = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
       let historyDbName;
       outer: for (const grp of Object.values(active)) {
         for (const dbName of grp) {
@@ -1118,7 +1146,8 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
 
       // build UNION ALL subqueries
       const subq = tables
-        .map((tbl) => `
+        .map((tbl) =>
+          `
           SELECT
             stockcode,
             stockdescription,
@@ -1129,7 +1158,8 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
             END AS saleType
           FROM \`${tbl}\`
           WHERE datetime BETWEEN :start AND :end
-        `.trim())
+        `.trim()
+        )
         .join("\nUNION ALL\n");
 
       // wrap & aggregate into two columns: retail & wholesale
@@ -1180,7 +1210,7 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
       // sanitize key for column name
       const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
       const m = shops[shopKey] || { retail: 0, wholesale: 0 };
-      row[`${k} Retail`]    = m.retail;
+      row[`${k} Retail`] = m.retail;
       row[`${k} Wholesale`] = m.wholesale;
     });
     data.push(row);
@@ -1217,7 +1247,10 @@ exports.acrossStockOnHandReport = async (req) => {
     const perShopData = await Promise.all(
       shopKeys.map(async (shopKey) => {
         // find its stockmaster DB
-        const active = await databaseController.getActiveDatabases(req.user, shopKey);
+        const active = await databaseController.getActiveDatabases(
+          req.user,
+          shopKey
+        );
         const stockmasterName = Object.values(active)
           .flat()
           .find((db) => db.toLowerCase().includes("master"));
@@ -1254,9 +1287,12 @@ exports.acrossStockOnHandReport = async (req) => {
           // handle missing table gracefully
           const noTable =
             err.original &&
-            (err.original.code === "ER_NO_SUCH_TABLE" || err.original.errno === 1146);
+            (err.original.code === "ER_NO_SUCH_TABLE" ||
+              err.original.errno === 1146);
           if (noTable) {
-            console.warn(`tblproducts missing in ${stockmasterName}, skipping.`);
+            console.warn(
+              `tblproducts missing in ${stockmasterName}, skipping.`
+            );
           } else {
             throw err;
           }
@@ -1269,21 +1305,29 @@ exports.acrossStockOnHandReport = async (req) => {
     // 4) pivot into a product‐centric map
     const prodMap = new Map();
     perShopData.forEach(({ shopKey, rows }) => {
-      rows.forEach(({ stockcode, stockdescription, stockOnHand, defaultSellingPrice, lastCostPrice }) => {
-        const key = `${stockcode}|||${stockdescription}`;
-        if (!prodMap.has(key)) {
-          prodMap.set(key, {
-            stockcode,
-            stockdescription,
-            shops: {},
-          });
+      rows.forEach(
+        ({
+          stockcode,
+          stockdescription,
+          stockOnHand,
+          defaultSellingPrice,
+          lastCostPrice,
+        }) => {
+          const key = `${stockcode}|||${stockdescription}`;
+          if (!prodMap.has(key)) {
+            prodMap.set(key, {
+              stockcode,
+              stockdescription,
+              shops: {},
+            });
+          }
+          prodMap.get(key).shops[shopKey] = {
+            stockOnHand: Number(stockOnHand) || 0,
+            defaultSellingPrice: Number(defaultSellingPrice) || 0,
+            lastCostPrice: Number(lastCostPrice) || 0,
+          };
         }
-        prodMap.get(key).shops[shopKey] = {
-          stockOnHand: Number(stockOnHand) || 0,
-          defaultSellingPrice: Number(defaultSellingPrice) || 0,
-          lastCostPrice: Number(lastCostPrice) || 0,
-        };
-      });
+      );
     });
 
     // 5) build final array, merging in each shop’s values
@@ -1292,10 +1336,16 @@ exports.acrossStockOnHandReport = async (req) => {
       const row = { stockcode, stockdescription };
       shopKeys.forEach((shopKey) => {
         const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
-        const m = shops[shopKey] || { stockOnHand: 0, defaultSellingPrice: 0, lastCostPrice: 0 };
-        row[`${k} Stock on hand`]  = m.stockOnHand;
-        row[`${k} Selling Price`]  = m.defaultSellingPrice;
-        row[`${k} Cost Price`]     = m.lastCostPrice;
+        const m = shops[shopKey] || {
+          stockOnHand: 0,
+          defaultSellingPrice: 0,
+          lastCostPrice: 0,
+        };
+        row[`${k} Stock on hand`] = m.stockOnHand;
+        row[`${k} Cost Price`] = m.lastCostPrice;
+        row[`${k} Selling Price`] = m.defaultSellingPrice;
+        row[`${k} Total Cost`] = m.lastCostPrice * m.stockOnHand;
+        row[`${k} Total Selling Price`] = m.defaultSellingPrice * m.stockOnHand;
       });
       data.push(row);
     });
@@ -1311,8 +1361,6 @@ exports.acrossStockOnHandReport = async (req) => {
     throw err;
   }
 };
-
-
 
 exports.allTblDataCancelTran = async (req) => {
   try {
