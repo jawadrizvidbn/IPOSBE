@@ -1375,8 +1375,12 @@ exports.acrossDailySalesReport = async (req) => {
   if (!rawStart || !rawEnd)
     throw new Error("`startDate` and `endDate` are required");
 
-  const start = new Date(rawStart);
-  const end = new Date(rawEnd);
+  // normalize start and end to YYYY-MM-DD
+  const startDay = rawStart.includes("T") ? rawStart.slice(0, 10) : rawStart;
+  const endDay = rawEnd.includes("T") ? rawEnd.slice(0, 10) : rawEnd;
+
+  const start = new Date(startDay);
+  const end = new Date(endDay);
   if (isNaN(start) || isNaN(end) || start > end) {
     throw new Error(
       "`startDate` and `endDate` must be valid dates, with start ≤ end"
@@ -1459,7 +1463,7 @@ exports.acrossDailySalesReport = async (req) => {
           CONCAT(
             hisyear, '-',
             LPAD(hismonth, 2, '0'), '-',
-            LPAD(hisday, 2, '0')
+            LPAD(hisday,   2, '0')
           ) AS date,
           paymenttype,
           SUM(inclSelling)    AS TotalInclSelling,
@@ -1474,15 +1478,16 @@ exports.acrossDailySalesReport = async (req) => {
         ORDER BY date, paymenttype;
       `;
 
+      // f) execute query
       const rows = await db.query(finalSql, {
         replacements: {
-          start: rawStart + " 00:00:00",
-          end: rawEnd + " 23:59:59",
+          start: `${startDay} 00:00:00`,
+          end: `${endDay} 23:59:59`,
         },
         type: QueryTypes.SELECT,
       });
 
-      // f) pivot into date map
+      // g) pivot into date map
       const map = new Map();
       rows.forEach((r) => {
         const d = r.date;
