@@ -1362,6 +1362,7 @@ exports.acrossStockOnHandReport = async (req) => {
 
 exports.acrossDailySalesReport = async (req) => {
   // 1) parse + validate shopKeys, year, isDetailed
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user;
   const rawKeys = req.query.shopKeys;
   if (!rawKeys) throw new Error("`shopKeys` is required");
   const shopKeys = String(rawKeys)
@@ -1371,23 +1372,17 @@ exports.acrossDailySalesReport = async (req) => {
   if (!shopKeys.length)
     throw new Error("At least one shopKey must be provided");
 
-  const yearParam = req.query.year;
-  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-  if (isNaN(year) || year < 2000 || year > 3000)
-    throw new Error("`year` must be a valid 4-digit number");
+  const isDetailed = req.query.isDetailed === "true";
 
-  // const isDetailed = req.query.isDetailed === "true";
-  const isDetailed = true;
+  const startDate = req.query.startDate;
+  const endDate = req.query.endDate;
 
-  // 2) setup date range and expected monthly tables
-  const { serverHost, serverUser, serverPassword, serverPort } = req.user;
-  const yearStart = `${year}-01-01 00:00:00`;
-  const yearEnd = `${year}-12-31 23:59:59`;
-  // months: YYYYMM for Jan-Dec
-  const expectedTables = Array.from({ length: 12 }, (_, i) => {
-    const mm = String(i + 1).padStart(2, "0");
-    return `${year}${mm}tbldata_current_tran`;
-  });
+  const yearStart = startDate ? `${startDate} 00:00:00` : null;
+  const yearEnd = endDate ? `${endDate} 23:59:59` : null;
+  const { year, months } = getYearAndMonthRange(startDate, endDate);
+  const expectedTables = months.map(
+    (month) => `${year}${month}tbldata_current_tran`
+  );
 
   // 3) query each shop
   const perShopData = await Promise.all(
