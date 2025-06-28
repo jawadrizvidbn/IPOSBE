@@ -1361,9 +1361,9 @@ exports.acrossStockOnHandReport = async (req) => {
 };
 
 exports.acrossDailySalesReport = async (req) => {
-  // 1) parse + validate shopKeys, year, isDetailed
+  // 1) parse + validate shopKeys, dates
   const rawKeys = req.query.shopKeys;
-  if (!rawKeys) throw new Error("`shopKeys` is required");
+  if (!rawKeys) throw new Error("`shopKeys` query parameter is required");
   const shopKeys = String(rawKeys)
     .split(",")
     .map((s) => s.trim())
@@ -1371,43 +1371,50 @@ exports.acrossDailySalesReport = async (req) => {
   if (!shopKeys.length)
     throw new Error("At least one shopKey must be provided");
 
-  const yearParam = req.query.year;
-  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-  if (isNaN(year) || year < 2000 || year > 3000)
-    throw new Error("`year` must be a valid 4-digit number");
+  const { startDate: rawStart, endDate: rawEnd } = req.query;
+  if (!rawStart || !rawEnd)
+    throw new Error("`startDate` and `endDate` are required");
 
-  const isDetailed = req.query.isDetailed === "true";
+  const start = new Date(rawStart);
+  const end = new Date(rawEnd);
+  if (isNaN(start) || isNaN(end) || start > end) {
+    throw new Error(
+      "`startDate` and `endDate` must be valid dates, with start ≤ end"
+    );
+  }
 
-  // 2) setup date range and expected monthly tables
+  // 2) common setup
   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
-  const yearStart = `${year}-01-01 00:00:00`;
-  const yearEnd = `${year}-12-31 23:59:59`;
-  // months: YYYYMM for Jan-Dec
-  const expectedTables = Array.from({ length: 12 }, (_, i) => {
-    const mm = String(i + 1).padStart(2, "0");
-    return `${year}${mm}tbldata_current_tran`;
-  });
+  // determine months between start/end
+  const fmtMonth = (d) => d.toISOString().slice(0, 7).replace("-", "");
+  const months = [];
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cur <= end) {
+    months.push(fmtMonth(cur));
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  const expectedTables = months.map((m) => `${m}tbldata_current_tran`);
 
   // 3) query each shop
   const perShopData = await Promise.all(
     shopKeys.map(async (shopKey) => {
-      // find history DB
+      // a) find history DB
       const active = await databaseController.getActiveDatabases(
         req.user,
         shopKey
       );
       let historyDbName;
       outer: for (const grp of Object.values(active)) {
-        for (const db of grp) {
-          if (db.includes("history")) {
-            historyDbName = db;
+        for (const dbName of grp) {
+          if (dbName.includes("history")) {
+            historyDbName = dbName;
             break outer;
           }
         }
       }
       if (!historyDbName) return { shopKey, map: new Map() };
 
-      // connect
+      // b) connect
       const db = createSequelizeInstanceCustom({
         databaseName: historyDbName,
         host: serverHost,
@@ -1416,7 +1423,7 @@ exports.acrossDailySalesReport = async (req) => {
         port: serverPort,
       });
 
-      // discover existing tables
+      // c) discover tables
       const exist = await db.query(
         `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES
          WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
@@ -1428,120 +1435,85 @@ exports.acrossDailySalesReport = async (req) => {
       const tables = exist.map((r) => r.Name);
       if (!tables.length) return { shopKey, map: new Map() };
 
-      // build subqueries
-      const subqs = tables.map((tbl) => {
-        if (isDetailed) {
-          return `SELECT hisyear,hismonth,hisday,paymenttype,
-            SUM(linetotal) AS inclSelling,
-            SUM(linetotal)/(1+vatpercentage/100) AS exclSelling,
-            SUM(averagecostprice*qty) AS exclCost,
-            SUM(averagecostprice*qty)/(1+vatpercentage/100) AS inclCost,
-            SUM(valuediscount) AS vat
-          FROM \`${tbl}\`
-          WHERE datetime BETWEEN :start AND :end
-          GROUP BY hisyear,hismonth,hisday,paymenttype,vatpercentage`;
-        } else {
-          return `SELECT hisyear,hismonth,hisday,
-            SUM(linetotal) AS inclSelling,
-            SUM(linetotal)/(1+vatpercentage/100) AS exclSelling,
-            SUM(averagecostprice*qty) AS exclCost,
-            SUM(averagecostprice*qty)/(1+vatpercentage/100) AS inclCost,
-            SUM(valuediscount) AS vat
-          FROM \`${tbl}\`
-          WHERE datetime BETWEEN :start AND :end
-          GROUP BY hisyear,hismonth,hisday`;
-        }
-      });
+      // d) build union-all subqueries (detailed)
+      const subqs = tables.map((tbl) =>
+        `
+        SELECT
+          hisyear, hismonth, hisday,
+          paymenttype,
+          SUM(linetotal) AS inclSelling,
+          SUM(linetotal)/(1+vatpercentage/100) AS exclSelling,
+          SUM(averagecostprice*qty) AS exclCost,
+          SUM(averagecostprice*qty)/(1+vatpercentage/100) AS inclCost,
+          SUM(valuediscount) AS vat
+        FROM ${tbl}
+        WHERE datetime BETWEEN :start AND :end
+        GROUP BY hisyear, hismonth, hisday, paymenttype, vatpercentage
+      `.trim()
+      );
       const unionSql = subqs.join("\nUNION ALL\n");
 
-      // final SQL
-      const finalSql = isDetailed
-        ? `SELECT
-           CONCAT(hisyear,'-',LPAD(hismonth,2,'0'),'-',LPAD(hisday,2,'0')) AS date,
-           paymenttype,
-           SUM(inclSelling) AS TotalInclSelling,
-           SUM(exclSelling) AS TotalExclSelling,
-           SUM(exclCost)    AS TotalExclCost,
-           SUM(inclCost)    AS TotalInclCost,
-           SUM(vat)         AS TotalVAT
-         FROM (
-           ${unionSql}
-         ) AS u
-         GROUP BY date,paymenttype
-         ORDER BY date,paymenttype;`
-        : `SELECT
-           CONCAT(hisyear,'-',LPAD(hismonth,2,'0'),'-',LPAD(hisday,2,'0')) AS date,
-           SUM(inclSelling) AS TotalInclSelling,
-           SUM(exclSelling) AS TotalExclSelling,
-           SUM(exclCost)    AS TotalExclCost,
-           SUM(inclCost)    AS TotalInclCost,
-           SUM(vat)         AS TotalVAT
-         FROM (
-           ${unionSql}
-         ) AS u
-         GROUP BY date
-         ORDER BY date;`;
+      // e) final SQL - detailed
+      const finalSql = `
+        SELECT
+          CONCAT(hisyear,'-',LPAD(hismonth,2,'0')),'-',LPAD(hisday,2,'0')) AS date,
+          paymenttype,
+          SUM(inclSelling) AS TotalInclSelling,
+          SUM(exclSelling) AS TotalExclSelling,
+          SUM(exclCost)    AS TotalExclCost,
+          SUM(inclCost)    AS TotalInclCost,
+          SUM(vat)         AS TotalVAT
+        FROM (
+          ${unionSql}
+        ) AS u
+        GROUP BY date, paymenttype
+        ORDER BY date, paymenttype;
+      `;
 
       const rows = await db.query(finalSql, {
-        replacements: { start: yearStart, end: yearEnd },
+        replacements: {
+          start: rawStart + " 00:00:00",
+          end: rawEnd + " 23:59:59",
+        },
         type: QueryTypes.SELECT,
       });
 
-      // pivot into date map
+      // f) pivot into date map
       const map = new Map();
       rows.forEach((r) => {
         const d = r.date;
         if (!map.has(d)) {
-          map.set(
-            d,
-            isDetailed
-              ? {
-                  cash: 0,
-                  card: 0,
-                  "d.dep": 0,
-                  acct: 0,
-                  totalExclCost: 0,
-                  totalInclCost: 0,
-                  totalExclSelling: 0,
-                  totalInclSelling: 0,
-                  vat: 0,
-                }
-              : {
-                  totalExclCost: 0,
-                  totalInclCost: 0,
-                  totalExclSelling: 0,
-                  totalInclSelling: 0,
-                  vat: 0,
-                }
-          );
+          map.set(d, {
+            cash: 0,
+            card: 0,
+            "d.dep": 0,
+            acct: 0,
+            totalExclCost: 0,
+            totalInclCost: 0,
+            totalExclSelling: 0,
+            totalInclSelling: 0,
+            vat: 0,
+          });
         }
         const rec = map.get(d);
-        if (isDetailed) {
-          const key = r.paymenttype.toLowerCase();
-          const inc = Number(r.TotalInclSelling) || 0;
-          if (key === "cash") rec.cash += inc;
-          else if (key === "card") rec.card += inc;
-          else if (key === "d.dep") rec["d.dep"] += inc;
-          else if (key === "acct") rec.acct += inc;
-          rec.totalExclCost += Number(r.TotalExclCost) || 0;
-          rec.totalInclCost += Number(r.TotalInclCost) || 0;
-          rec.totalExclSelling += Number(r.TotalExclSelling) || 0;
-          rec.totalInclSelling += inc;
-          rec.vat += Number(r.TotalVAT) || 0;
-        } else {
-          rec.totalExclCost += Number(r.TotalExclCost) || 0;
-          rec.totalInclCost += Number(r.TotalInclCost) || 0;
-          rec.totalExclSelling += Number(r.TotalExclSelling) || 0;
-          rec.totalInclSelling += Number(r.TotalInclSelling) || 0;
-          rec.vat += Number(r.TotalVAT) || 0;
-        }
+        const key = r.paymenttype.toLowerCase();
+        const inc = Number(r.TotalInclSelling) || 0;
+        if (key === "cash") rec.cash += inc;
+        else if (key === "card") rec.card += inc;
+        else if (key === "d.dep") rec["d.dep"] += inc;
+        else if (key === "acct") rec.acct += inc;
+        rec.totalExclCost += Number(r.TotalExclCost) || 0;
+        rec.totalInclCost += Number(r.TotalInclCost) || 0;
+        rec.totalExclSelling += Number(r.TotalExclSelling) || 0;
+        rec.totalInclSelling += inc;
+        rec.vat += Number(r.TotalVAT) || 0;
       });
 
       return { shopKey, map };
     })
   );
 
-  // 4) assemble date list
+  // 4) collect dates
   const dates = Array.from(
     new Set(perShopData.flatMap(({ map }) => Array.from(map.keys())))
   ).sort();
@@ -1552,39 +1524,31 @@ exports.acrossDailySalesReport = async (req) => {
     perShopData.forEach(({ shopKey, map }) => {
       const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
       const rec = map.get(date) || {};
-      if (isDetailed) {
-        row[`${k} Cash Sales`] = rec.cash?.toFixed(2) || "0.00";
-        row[`${k} Card Sales`] = rec.card?.toFixed(2) || "0.00";
-        row[`${k} D.Dep Sales`] = rec["d.dep"]?.toFixed(2) || "0.00";
-        row[`${k} Acct Sales`] = rec.acct?.toFixed(2) || "0.00";
-      }
-      row[`${k} Total Excl Cost`] = rec.totalExclCost?.toFixed(2) || "0.00";
-      row[`${k} Total Incl Cost`] = rec.totalInclCost?.toFixed(2) || "0.00";
-      row[`${k} Total Excl Selling`] =
-        rec.totalExclSelling?.toFixed(2) || "0.00";
-      row[`${k} Total Incl Selling`] =
-        rec.totalInclSelling?.toFixed(2) || "0.00";
+      row[`${k} Cash Sales`] = (rec.cash || 0).toFixed(2);
+      row[`${k} Card Sales`] = (rec.card || 0).toFixed(2);
+      row[`${k} D.Dep Sales`] = (rec["d.dep"] || 0).toFixed(2);
+      row[`${k} Acct Sales`] = (rec.acct || 0).toFixed(2);
+      row[`${k} Total Excl Cost`] = (rec.totalExclCost || 0).toFixed(2);
+      row[`${k} Total Incl Cost`] = (rec.totalInclCost || 0).toFixed(2);
+      row[`${k} Total Excl Selling`] = (rec.totalExclSelling || 0).toFixed(2);
+      row[`${k} Total Incl Selling`] = (rec.totalInclSelling || 0).toFixed(2);
       row[`${k} Day Profit`] = (
         (rec.totalExclSelling || 0) - (rec.totalExclCost || 0)
       ).toFixed(2);
-      row[`${k} Total VAT`] = rec.vat?.toFixed(2) || "0.00";
+      row[`${k} Total VAT`] = (rec.vat || 0).toFixed(2);
     });
     return row;
   });
 
-  // 6) sortableKeys
+  // 6) build sortableKeys
   const sortableKeys = [];
   shopKeys.forEach((shopKey) => {
     const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
-    if (isDetailed) {
-      sortableKeys.push(
-        `${k} Cash Sales`,
-        `${k} Card Sales`,
-        `${k} D.Dep Sales`,
-        `${k} Acct Sales`
-      );
-    }
     sortableKeys.push(
+      `${k} Cash Sales`,
+      `${k} Card Sales`,
+      `${k} D.Dep Sales`,
+      `${k} Acct Sales`,
       `${k} Total Excl Cost`,
       `${k} Total Incl Cost`,
       `${k} Total Excl Selling`,
@@ -1594,7 +1558,7 @@ exports.acrossDailySalesReport = async (req) => {
     );
   });
 
-  // 7) return
+  // 7) return payload
   return { success: true, sortableKeys, data };
 };
 
