@@ -1372,7 +1372,8 @@ exports.acrossDailySalesReport = async (req) => {
   if (!shopKeys.length)
     throw new Error("At least one shopKey must be provided");
 
-  const isDetailed = req.query.isDetailed === "true";
+  // const isDetailed = req.query.isDetailed === "true";
+  const isDetailed = true;
 
   const startDate = req.query.startDate;
   const endDate = req.query.endDate;
