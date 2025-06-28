@@ -1360,6 +1360,168 @@ exports.acrossStockOnHandReport = async (req) => {
   }
 };
 
+exports.acrossDailySalesReport = async (req) => {
+  // 1) parse and validate shopKeys and tableName
+  const rawKeys = req.query.shopKeys;
+  if (!rawKeys) throw new Error("`shopKeys` is required");
+  const shopKeys = String(rawKeys)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!shopKeys.length)
+    throw new Error("At least one shopKey must be provided");
+
+  const tableName = req.query.tableName;
+  if (!tableName || !/^[0-9a-zA-Z_]+$/.test(tableName))
+    throw new Error("Valid `tableName` is required");
+
+  // 2) common setup
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+
+  // 3) fetch per-shop raw daily data
+  const perShopData = await Promise.all(
+    shopKeys.map(async (shopKey) => {
+      // a) get history DB name
+      const active = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+      let historyDbName;
+      outer: for (const grp of Object.values(active)) {
+        for (const db of grp) {
+          if (db.includes("history")) {
+            historyDbName = db;
+            break outer;
+          }
+        }
+      }
+      if (!historyDbName) return { shopKey, dailyRows: [] };
+
+      // b) connect
+      const historyDb = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      // c) query daily breakdown (per date, per paymenttype)
+      const dailySql = `
+        SELECT
+          hisyear, hismonth, hisday,
+          paymenttype,
+          vatpercentage,
+          SUM(linetotal) AS TotalInclSelling,
+          SUM(linetotal)/(1+vatpercentage/100) AS TotalExclSelling,
+          SUM(averagecostprice*qty) AS TotalExclCost,
+          SUM(averagecostprice*qty)/(1+vatpercentage/100) AS TotalInclCost,
+          SUM(valuediscount) AS TotalVAT
+        FROM ${tableName}
+        GROUP BY hisyear, hismonth, hisday, paymenttype, vatpercentage
+        ORDER BY hisyear, hismonth, hisday;
+      `;
+
+      const dailyRows = await historyDb.query(dailySql, {
+        type: QueryTypes.SELECT,
+      });
+      return { shopKey, dailyRows };
+    })
+  );
+
+  // 4) build per-shop date maps
+  const shopDateMaps = {};
+  perShopData.forEach(({ shopKey, dailyRows }) => {
+    const dateMap = new Map();
+    dailyRows.forEach((r) => {
+      const date = `${r.hisyear}-${String(r.hismonth).padStart(
+        2,
+        "0"
+      )}-${String(r.hisday).padStart(2, "0")}`;
+      if (!dateMap.has(date)) {
+        dateMap.set(date, {
+          cash: 0,
+          card: 0,
+          d_dep: 0,
+          acct: 0,
+          totalExclCost: 0,
+          totalInclCost: 0,
+          totalExclSelling: 0,
+          totalInclSelling: 0,
+          dayProfit: 0,
+          totalVAT: 0,
+        });
+      }
+      const rec = dateMap.get(date);
+      const pts = r.paymenttype.toLowerCase();
+      const incSell = Number(r.TotalInclSelling) || 0;
+      // payment columns
+      if (pts === "cash") rec.cash += incSell;
+      else if (pts === "card") rec.card += incSell;
+      else if (pts === "d.dep") rec.d_dep += incSell;
+      else if (pts === "acct") rec.acct += incSell;
+      // totals
+      rec.totalExclCost += Number(r.TotalExclCost) || 0;
+      rec.totalInclCost += Number(r.TotalInclCost) || 0;
+      rec.totalExclSelling += Number(r.TotalExclSelling) || 0;
+      rec.totalInclSelling += incSell;
+      rec.totalVAT += Number(r.TotalVAT) || 0;
+      rec.dayProfit = rec.totalExclSelling - rec.totalExclCost;
+    });
+    shopDateMaps[shopKey] = dateMap;
+  });
+
+  // 5) collect all dates
+  const allDates = new Set();
+  Object.values(shopDateMaps).forEach((map) =>
+    map.forEach((_, date) => allDates.add(date))
+  );
+  const sortedDates = Array.from(allDates).sort();
+
+  // 6) build data array
+  const data = sortedDates.map((date) => {
+    const row = { date };
+    shopKeys.forEach((shopKey) => {
+      const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+      const rec = shopDateMaps[shopKey].get(date) || {};
+      row[`${k} Cash Sales`] = rec.cash?.toFixed(2) || "0.00";
+      row[`${k} Card Sales`] = rec.card?.toFixed(2) || "0.00";
+      row[`${k} D.Dep Sales`] = rec.d_dep?.toFixed(2) || "0.00";
+      row[`${k} Acct Sales`] = rec.acct?.toFixed(2) || "0.00";
+      row[`${k} Total Excl Cost`] = rec.totalExclCost?.toFixed(2) || "0.00";
+      row[`${k} Total Incl Cost`] = rec.totalInclCost?.toFixed(2) || "0.00";
+      row[`${k} Total Excl Selling`] =
+        rec.totalExclSelling?.toFixed(2) || "0.00";
+      row[`${k} Total Incl Selling`] =
+        rec.totalInclSelling?.toFixed(2) || "0.00";
+      row[`${k} Day Profit`] = rec.dayProfit?.toFixed(2) || "0.00";
+      row[`${k} Total VAT`] = rec.totalVAT?.toFixed(2) || "0.00";
+    });
+    return row;
+  });
+
+  // 7) build sortableKeys
+  const sortableKeys = [];
+  shopKeys.forEach((shopKey) => {
+    const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+    sortableKeys.push(
+      `${k} Cash Sales`,
+      `${k} Card Sales`,
+      `${k} D.Dep Sales`,
+      `${k} Acct Sales`,
+      `${k} Total Excl Cost`,
+      `${k} Total Incl Cost`,
+      `${k} Total Excl Selling`,
+      `${k} Total Incl Selling`,
+      `${k} Day Profit`,
+      `${k} Total VAT`
+    );
+  });
+
+  // 8) return
+  return { success: true, sortableKeys, data };
+};
+
 exports.allTblDataCancelTran = async (req) => {
   try {
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;

@@ -1335,6 +1335,16 @@ exports.acrossStockOnHandReport = async (req, res) => {
   }
 };
 
+exports.acrossDailySalesReport = async (req, res) => {
+  try {
+    const results = await reportsService.acrossDailySalesReport(req);
+    res.send(results);
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 exports.findAllTblDataCancelTran = async (req, res) => {
   try {
     const results = await reportsService.allTblDataCancelTran(req);
