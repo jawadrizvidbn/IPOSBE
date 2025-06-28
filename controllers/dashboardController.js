@@ -430,7 +430,7 @@ exports.getTopStores = async (req, res) => {
         SELECT
           SUM(averagecostprice * qty)    AS subCost,
           SUM(linetotal)                 AS subSelling,
-          COUNT(DISTINCT transactionnum) AS subTransactions
+          COUNT(DISTINCT salenum) AS subTransactions
         FROM \`${tbl}\`
         WHERE datetime BETWEEN :yearStart AND :yearEnd
       `.trim()
