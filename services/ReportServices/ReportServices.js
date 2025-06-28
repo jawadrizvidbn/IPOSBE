@@ -1446,7 +1446,7 @@ exports.acrossDailySalesReport = async (req) => {
           SUM(averagecostprice*qty) AS exclCost,
           SUM(averagecostprice*qty)/(1+vatpercentage/100) AS inclCost,
           SUM(valuediscount) AS vat
-        FROM ${tbl}
+        FROM \`${tbl}\`
         WHERE datetime BETWEEN :start AND :end
         GROUP BY hisyear, hismonth, hisday, paymenttype, vatpercentage
       `.trim()
@@ -1456,13 +1456,17 @@ exports.acrossDailySalesReport = async (req) => {
       // e) final SQL - detailed
       const finalSql = `
         SELECT
-          CONCAT(hisyear,'-',LPAD(hismonth,2,'0')),'-',LPAD(hisday,2,'0')) AS date,
+          CONCAT(
+            hisyear, '-',
+            LPAD(hismonth, 2, '0'), '-',
+            LPAD(hisday, 2, '0')
+          ) AS date,
           paymenttype,
-          SUM(inclSelling) AS TotalInclSelling,
-          SUM(exclSelling) AS TotalExclSelling,
-          SUM(exclCost)    AS TotalExclCost,
-          SUM(inclCost)    AS TotalInclCost,
-          SUM(vat)         AS TotalVAT
+          SUM(inclSelling)    AS TotalInclSelling,
+          SUM(exclSelling)    AS TotalExclSelling,
+          SUM(exclCost)       AS TotalExclCost,
+          SUM(inclCost)       AS TotalInclCost,
+          SUM(vat)            AS TotalVAT
         FROM (
           ${unionSql}
         ) AS u
@@ -1561,7 +1565,6 @@ exports.acrossDailySalesReport = async (req) => {
   // 7) return payload
   return { success: true, sortableKeys, data };
 };
-
 exports.allTblDataCancelTran = async (req) => {
   try {
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
