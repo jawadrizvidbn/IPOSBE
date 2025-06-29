@@ -1631,6 +1631,71 @@ exports.acrossDailySalesReport = async (req) => {
       return shopData;
     })
     .flat();
+
+  const grandTotal = {
+    "Shop Name": "Grand Total",
+    "Cash Sales":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Cash Sales"]))
+      )?.toFixed?.(2) || 0,
+    "Card Sales":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Card Sales"]))
+      )?.toFixed?.(2) || 0,
+    "D.Dep Sales":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["D.Dep Sales"]))
+      )?.toFixed?.(2) || 0,
+    "Acct Sales":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Acct Sales"]))
+      )?.toFixed?.(2) || 0,
+    "Total Excl Cost":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total Excl Cost"]))
+      )?.toFixed?.(2) || 0,
+    "Total Incl Cost":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total Incl Cost"]))
+      )?.toFixed?.(2) || 0,
+    "Total Excl Selling":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total Excl Selling"]))
+      )?.toFixed?.(2) || 0,
+    "Total Incl Selling":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total Incl Selling"]))
+      )?.toFixed?.(2) || 0,
+    "Day Profit":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Day Profit"]))
+      )?.toFixed?.(2) || 0,
+    "Total VAT":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total VAT"]))
+      )?.toFixed?.(2) || 0,
+  };
+  data.push(grandTotal);
   return { success: true, sortableKeys: [], data };
 };
 
