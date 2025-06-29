@@ -1582,50 +1582,51 @@ exports.acrossDailySalesReport = async (req) => {
         return {
           "Shop Name": shopKey,
           date,
-          "Cash Sales": rec.cash.toFixed(2),
-          "Card Sales": rec.card.toFixed(2),
-          "D.Dep Sales": rec["d.dep"].toFixed(2),
-          "Acct Sales": rec.acct.toFixed(2),
-          "Total Excl Cost": rec.totalExclCost.toFixed(2),
-          "Total Incl Cost": rec.totalInclCost.toFixed(2),
-          "Total Excl Selling": rec.totalExclSelling.toFixed(2),
-          "Total Incl Selling": rec.totalInclSelling.toFixed(2),
-          "Day Profit": (rec.totalExclSelling - rec.totalExclCost).toFixed(2),
-          "Total VAT": rec.vat.toFixed(2),
+          "Cash Sales": rec.cash?.toFixed?.(2) || 0,
+          "Card Sales": rec.card?.toFixed?.(2) || 0,
+          "D.Dep Sales": rec["d.dep"]?.toFixed?.(2) || 0,
+          "Acct Sales": rec.acct?.toFixed?.(2) || 0,
+          "Total Excl Cost": rec.totalExclCost?.toFixed?.(2) || 0,
+          "Total Incl Cost": rec.totalInclCost?.toFixed?.(2) || 0,
+          "Total Excl Selling": rec.totalExclSelling?.toFixed?.(2) || 0,
+          "Total Incl Selling": rec.totalInclSelling?.toFixed?.(2) || 0,
+          "Day Profit":
+            ((rec.totalExclSelling || 0) - (rec.totalExclCost || 0))?.toFixed?.(
+              2
+            ) || 0,
+          "Total VAT": rec.vat?.toFixed?.(2) || 0,
         };
       });
       shopData.push({
         "Shop Name": `${shopKey} Total`,
-        "Cash Sales": sum(shopData.map((r) => Number(r["Cash Sales"]))).toFixed(
-          2
-        ),
-        "Card Sales": sum(shopData.map((r) => Number(r["Card Sales"]))).toFixed(
-          2
-        ),
-        "D.Dep Sales": sum(
-          shopData.map((r) => Number(r["D.Dep Sales"]))
-        ).toFixed(2),
-        "Acct Sales": sum(shopData.map((r) => Number(r["Acct Sales"]))).toFixed(
-          2
-        ),
-        "Total Excl Cost": sum(
-          shopData.map((r) => Number(r["Total Excl Cost"]))
-        ).toFixed(2),
-        "Total Incl Cost": sum(
-          shopData.map((r) => Number(r["Total Incl Cost"]))
-        ).toFixed(2),
-        "Total Excl Selling": sum(
-          shopData.map((r) => Number(r["Total Excl Selling"]))
-        ).toFixed(2),
-        "Total Incl Selling": sum(
-          shopData.map((r) => Number(r["Total Incl Selling"]))
-        ).toFixed(2),
-        "Day Profit": sum(shopData.map((r) => Number(r["Day Profit"]))).toFixed(
-          2
-        ),
-        "Total VAT": sum(shopData.map((r) => Number(r["Total VAT"]))).toFixed(
-          2
-        ),
+        "Cash Sales":
+          sum(shopData.map((r) => Number(r["Cash Sales"])))?.toFixed?.(2) || 0,
+        "Card Sales":
+          sum(shopData.map((r) => Number(r["Card Sales"])))?.toFixed?.(2) || 0,
+        "D.Dep Sales":
+          sum(shopData.map((r) => Number(r["D.Dep Sales"])))?.toFixed?.(2) || 0,
+        "Acct Sales":
+          sum(shopData.map((r) => Number(r["Acct Sales"])))?.toFixed?.(2) || 0,
+        "Total Excl Cost":
+          sum(shopData.map((r) => Number(r["Total Excl Cost"])))?.toFixed?.(
+            2
+          ) || 0,
+        "Total Incl Cost":
+          sum(shopData.map((r) => Number(r["Total Incl Cost"])))?.toFixed?.(
+            2
+          ) || 0,
+        "Total Excl Selling":
+          sum(shopData.map((r) => Number(r["Total Excl Selling"])))?.toFixed?.(
+            2
+          ) || 0,
+        "Total Incl Selling":
+          sum(shopData.map((r) => Number(r["Total Incl Selling"])))?.toFixed?.(
+            2
+          ) || 0,
+        "Day Profit":
+          sum(shopData.map((r) => Number(r["Day Profit"])))?.toFixed?.(2) || 0,
+        "Total VAT":
+          sum(shopData.map((r) => Number(r["Total VAT"])))?.toFixed?.(2) || 0,
       });
       return shopData;
     })
