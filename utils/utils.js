@@ -20,3 +20,7 @@ export function getYearAndMonthRange(startDate, endDate) {
 
   return { year, months };
 }
+
+export function sum(numbers) {
+  return numbers.reduce((acc, num) => acc + num, 0);
+}

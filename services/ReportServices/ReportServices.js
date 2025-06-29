@@ -12,7 +12,7 @@ const { QueryTypes } = require("sequelize");
 const dateFns = require("date-fns");
 const { format, getYear, getMonth, addDays } = require("date-fns");
 const createSequelizeInstanceCustom = require("../../utils/sequelizeInstanceCustom");
-const { getYearAndMonthRange } = require("../../utils/utils");
+const { getYearAndMonthRange, sum } = require("../../utils/utils");
 
 exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
   try {
@@ -1380,6 +1380,8 @@ exports.acrossDailySalesReport = async (req) => {
 
   const startDay = startDate ? `${startDate} 00:00:00` : null;
   const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+  console.log({ startDate, endDate });
   const { year, months } = getYearAndMonthRange(startDate, endDate);
   const expectedTables = months.map(
     (month) => `${year}${month}tbldata_current_tran`
@@ -1574,7 +1576,7 @@ exports.acrossDailySalesReport = async (req) => {
   // });
 
   const data = shopKeys.map((shopKey) => {
-    return dates.map((date) => {
+    const shopData = dates.map((date) => {
       const rec = perShopMap[shopKey].get(date) || {};
       return {
         "Shop Name": shopKey,
@@ -1591,6 +1593,38 @@ exports.acrossDailySalesReport = async (req) => {
         "Total VAT": rec.vat.toFixed(2),
       };
     });
+    shopData.push({
+      "Shop Name": `${shopKey} Total`,
+      "Cash Sales": sum(shopData.map((r) => Number(r["Cash Sales"]))).toFixed(
+        2
+      ),
+      "Card Sales": sum(shopData.map((r) => Number(r["Card Sales"]))).toFixed(
+        2
+      ),
+      "D.Dep Sales": sum(shopData.map((r) => Number(r["D.Dep Sales"]))).toFixed(
+        2
+      ),
+      "Acct Sales": sum(shopData.map((r) => Number(r["Acct Sales"]))).toFixed(
+        2
+      ),
+      "Total Excl Cost": sum(
+        shopData.map((r) => Number(r["Total Excl Cost"]))
+      ).toFixed(2),
+      "Total Incl Cost": sum(
+        shopData.map((r) => Number(r["Total Incl Cost"]))
+      ).toFixed(2),
+      "Total Excl Selling": sum(
+        shopData.map((r) => Number(r["Total Excl Selling"]))
+      ).toFixed(2),
+      "Total Incl Selling": sum(
+        shopData.map((r) => Number(r["Total Incl Selling"]))
+      ).toFixed(2),
+      "Day Profit": sum(shopData.map((r) => Number(r["Day Profit"]))).toFixed(
+        2
+      ),
+      "Total VAT": sum(shopData.map((r) => Number(r["Total VAT"]))).toFixed(2),
+    });
+    return shopData;
   });
   return { success: true, sortableKeys: [], data };
 };
