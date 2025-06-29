@@ -1513,6 +1513,34 @@ exports.acrossDailySalesReport = async (req) => {
       return summary;
     });
 
+    const grandTotal = {
+      "Shop Name": "Grand Total",
+      "Cash Sales":
+        sum(data.map((r) => Number(r["Cash Sales"])))?.toFixed?.(2) || 0,
+      "Card Sales":
+        sum(data.map((r) => Number(r["Card Sales"])))?.toFixed?.(2) || 0,
+      "D.Dep Sales":
+        sum(data.map((r) => Number(r["D.Dep Sales"])))?.toFixed?.(2) || 0,
+      "Acct Sales":
+        sum(data.map((r) => Number(r["Acct Sales"])))?.toFixed?.(2) || 0,
+      "Total Excl Cost":
+        sum(data.map((r) => Number(r["Total Excl Cost"])))?.toFixed?.(2) || 0,
+      "Total Incl Cost":
+        sum(data.map((r) => Number(r["Total Incl Cost"])))?.toFixed?.(2) || 0,
+      "Total Excl Selling":
+        sum(data.map((r) => Number(r["Total Excl Selling"])))?.toFixed?.(2) ||
+        0,
+      "Total Incl Selling":
+        sum(data.map((r) => Number(r["Total Incl Selling"])))?.toFixed?.(2) ||
+        0,
+      "Day Profit":
+        sum(data.map((r) => Number(r["Day Profit"])))?.toFixed?.(2) || 0,
+      "Total VAT":
+        sum(data.map((r) => Number(r["Total VAT"])))?.toFixed?.(2) || 0,
+    };
+
+    data.push(grandTotal);
+
     return { success: true, sortableKeys: [], data };
   }
 
@@ -1553,27 +1581,6 @@ exports.acrossDailySalesReport = async (req) => {
   const dates = Array.from(
     new Set(Object.values(perShopMap).flatMap((m) => Array.from(m.keys())))
   ).sort();
-
-  // const data = dates.map((date) => {
-  //   const row = { date };
-  //   shopKeys.forEach((shopKey) => {
-  //     const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
-  //     const rec = perShopMap[shopKey].get(date) || {};
-  //     row[`${k} Cash Sales`] = (rec.cash || 0).toFixed(2);
-  //     row[`${k} Card Sales`] = (rec.card || 0).toFixed(2);
-  //     row[`${k} D.Dep Sales`] = (rec["d.dep"] || 0).toFixed(2);
-  //     row[`${k} Acct Sales`] = (rec.acct || 0).toFixed(2);
-  //     row[`${k} Total Excl Cost`] = (rec.totalExclCost || 0).toFixed(2);
-  //     row[`${k} Total Incl Cost`] = (rec.totalInclCost || 0).toFixed(2);
-  //     row[`${k} Total Excl Selling`] = (rec.totalExclSelling || 0).toFixed(2);
-  //     row[`${k} Total Incl Selling`] = (rec.totalInclSelling || 0).toFixed(2);
-  //     row[`${k} Day Profit`] = (
-  //       (rec.totalExclSelling || 0) - (rec.totalExclCost || 0)
-  //     ).toFixed(2);
-  //     row[`${k} Total VAT`] = (rec.vat || 0).toFixed(2);
-  //   });
-  //   return row;
-  // });
 
   const data = shopKeys
     .map((shopKey) => {
@@ -1695,6 +1702,7 @@ exports.acrossDailySalesReport = async (req) => {
           .map((r) => Number(r["Total VAT"]))
       )?.toFixed?.(2) || 0,
   };
+
   data.push(grandTotal);
   return { success: true, sortableKeys: [], data };
 };
