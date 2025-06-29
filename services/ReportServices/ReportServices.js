@@ -1381,6 +1381,7 @@ exports.acrossDailySalesReport = async (req) => {
   const startDay = startDate ? `${startDate} 00:00:00` : null;
   const endDay = endDate ? `${endDate} 23:59:59` : null;
 
+  console.log({ startDay, endDay });
   const { year, months } = getYearAndMonthRange(startDate, endDate);
   const expectedTables = months.map(
     (month) => `${year}${month}tbldata_current_tran`
@@ -1553,7 +1554,7 @@ exports.acrossDailySalesReport = async (req) => {
   const dates = Array.from(
     new Set(Object.values(perShopMap).flatMap((m) => Array.from(m.keys())))
   ).sort();
-  console.log({ dates });
+
   // const data = dates.map((date) => {
   //   const row = { date };
   //   shopKeys.forEach((shopKey) => {
