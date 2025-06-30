@@ -1782,9 +1782,10 @@ exports.acrossInvoiceReport = async (req) => {
       const finalSql = `
         SELECT
           datetime        AS DateTime,
-          salenum         AS Invoice No,
-          paymenttype     AS Finalized As,
-          invoicetotal    AS Invoice Total,
+          salenum         AS InvoiceNo,
+          paymenttype     AS FinalizedAs,
+          clerkname       AS ClerkName,
+          invoicetotal    AS InvoiceTotal,
         FROM (
           ${unionSql}
         ) AS u
