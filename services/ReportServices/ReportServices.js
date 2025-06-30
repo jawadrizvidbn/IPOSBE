@@ -1806,14 +1806,14 @@ exports.acrossInvoiceReport = async (req) => {
 
   const formattedData = rawData
     .map(({ shopKey, rows }) => {
-      return {
+      return rows.map((r) => ({
         "Shop Name": shopKey,
-        "Date & Time": rows.map((r) => r.DateTime),
-        "Invoice No": rows.map((r) => r.InvoiceNo),
-        "Finalized As": rows.map((r) => r.FinalizedAs),
-        "Clerk Name": rows.map((r) => r.ClerkName),
-        "Invoice Total": rows.map((r) => r.InvoiceTotal),
-      };
+        "Date & Time": r.DateTime,
+        "Invoice No": r.InvoiceNo,
+        "Finalized As": r.FinalizedAs,
+        "Clerk Name": r.ClerkName,
+        "Invoice Total": r.InvoiceTotal,
+      }));
     })
     .flat();
 
