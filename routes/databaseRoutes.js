@@ -163,6 +163,11 @@ router.get(
   checkSuperadmin,
   reportController.acrossDailySalesReport
 );
+router.get(
+  "/acrossInvoiceReport",
+  checkSuperadmin,
+  reportController.acrossInvoiceReport
+);
 
 router.get(
   "/tblDataCancelTran",

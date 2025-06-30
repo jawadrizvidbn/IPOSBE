@@ -1707,6 +1707,107 @@ exports.acrossDailySalesReport = async (req) => {
   return { success: true, sortableKeys: [], data };
 };
 
+exports.acrossInvoiceReport = async (req) => {
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+  const rawKeys = req.query.shopKeys;
+  if (!rawKeys) throw new Error("`shopKeys` is required");
+  const shopKeys = String(rawKeys)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!shopKeys.length)
+    throw new Error("At least one shopKey must be provided");
+  const startDate = req.query.startDate;
+  const endDate = req.query.endDate;
+
+  const startDay = startDate ? `${startDate} 00:00:00` : null;
+  const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+  const { year, months } = getYearAndMonthRange(startDate, endDate);
+  const expectedTables = months.map(
+    (month) => `${year}${month}tbldata_current_tran`
+  );
+
+  const rawData = await Promise.all(
+    shopKeys.map(async (shopKey) => {
+      const active = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+      let historyDbName;
+      outer: for (const grp of Object.values(active)) {
+        for (const db of grp) {
+          if (db.includes("history")) {
+            historyDbName = db;
+            break outer;
+          }
+        }
+      }
+      if (!historyDbName) return { shopKey, rows: [] };
+
+      const db = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      const exist = await db.query(
+        `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
+        {
+          replacements: { db: historyDbName, list: expectedTables },
+          type: QueryTypes.SELECT,
+        }
+      );
+      const tables = exist.map((r) => r.Name);
+      if (!tables.length) return { shopKey, rows: [] };
+
+      const subqs = tables.map((tbl) =>
+        `
+        SELECT
+          datetime,
+          salenum,
+          paymenttype,
+          clerkname,
+          invoicetotal
+        FROM ${tbl}
+        WHERE datetime BETWEEN :start AND :end
+        GROUP BY hisyear, hismonth, hisday, paymenttype, vatpercentage
+      `.trim()
+      );
+      const unionSql = subqs.join("\nUNION ALL\n");
+
+      const finalSql = `
+        SELECT
+          datetime        AS Date & Time,
+          salenum         AS Invoice No,
+          paymenttype     AS Finalized As,
+          invoicetotal    AS Invoice Total,
+        FROM (
+          ${unionSql}
+        ) AS u
+        GROUP BY date, paymenttype
+        ORDER BY date, paymenttype;
+      `;
+
+      const rows = await db.query(finalSql, {
+        replacements: {
+          start: startDay,
+          end: endDay,
+        },
+        type: QueryTypes.SELECT,
+      });
+      return { shopKey, rows };
+    })
+  );
+
+  console.log(rawData);
+
+  return { success: true, data: rawData };
+};
+
 exports.allTblDataCancelTran = async (req) => {
   try {
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;

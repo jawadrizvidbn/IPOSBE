@@ -1345,6 +1345,16 @@ exports.acrossDailySalesReport = async (req, res) => {
   }
 };
 
+exports.acrossInvoiceReport = async (req, res) => {
+  try {
+    const results = await reportsService.acrossInvoiceReport(req);
+    res.send(results);
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 exports.findAllTblDataCancelTran = async (req, res) => {
   try {
     const results = await reportsService.allTblDataCancelTran(req);
