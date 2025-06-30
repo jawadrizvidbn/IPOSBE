@@ -1789,8 +1789,8 @@ exports.acrossInvoiceReport = async (req) => {
         FROM (
           ${unionSql}
         ) AS u
-        GROUP BY date, paymenttype
-        ORDER BY date, paymenttype;
+        GROUP BY datetime
+        ORDER BY datetime;
       `;
 
       const rows = await db.query(finalSql, {
