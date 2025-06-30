@@ -1804,9 +1804,20 @@ exports.acrossInvoiceReport = async (req) => {
     })
   );
 
-  console.log(rawData);
+  const formattedData = rawData
+    .map(({ shopKey, rows }) => {
+      return {
+        "Shop Name": shopKey,
+        "Date & Time": rows.map((r) => r.DateTime),
+        "Invoice No": rows.map((r) => r.InvoiceNo),
+        "Finalized As": rows.map((r) => r.FinalizedAs),
+        "Clerk Name": rows.map((r) => r.ClerkName),
+        "Invoice Total": rows.map((r) => r.InvoiceTotal),
+      };
+    })
+    .flat();
 
-  return { success: true, data: rawData };
+  return { success: true, data: formattedData };
 };
 
 exports.allTblDataCancelTran = async (req) => {
