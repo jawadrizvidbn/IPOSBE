@@ -1785,7 +1785,7 @@ exports.acrossInvoiceReport = async (req) => {
           salenum         AS InvoiceNo,
           paymenttype     AS FinalizedAs,
           clerkname       AS ClerkName,
-          invoicetotal    AS InvoiceTotal,
+          invoicetotal    AS InvoiceTotal
         FROM (
           ${unionSql}
         ) AS u
