@@ -1781,7 +1781,7 @@ exports.acrossInvoiceReport = async (req) => {
 
       const finalSql = `
         SELECT
-          datetime        AS Date & Time,
+          datetime        AS DateTime,
           salenum         AS Invoice No,
           paymenttype     AS Finalized As,
           invoicetotal    AS Invoice Total,
