@@ -1075,23 +1075,21 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
     throw new Error("At least one shopKey must be provided");
   }
 
-  const yearParam = req.query.year;
-  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-  if (isNaN(year) || year < 2000 || year > 3000) {
-    throw new Error("`year` must be a valid 4-digit number");
-  }
-
   // new: detailed flag
   const isDetailed = Boolean(req.query.isDetailed);
 
   // 2) common setup
   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
-  const yearStart = `${year}-01-01 00:00:00`;
-  const yearEnd = `${year}-12-31 23:59:59`;
-  const expectedTables = Array.from({ length: 12 }, (_, i) => {
-    const mm = String(i + 1).padStart(2, "0");
-    return `${year}${mm}tbldata_current_tran`;
-  });
+  const startDate = req.query.startDate;
+  const endDate = req.query.endDate;
+
+  const startDay = startDate ? `${startDate} 00:00:00` : null;
+  const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+  const { year, months } = getYearAndMonthRange(startDate, endDate);
+  const expectedTables = months.map(
+    (month) => `${year}${month}tbldata_current_tran`
+  );
 
   // 3) fetch each shop's per-product retail & wholesale totals
   const perShopData = await Promise.all(
@@ -1174,7 +1172,7 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
       `;
 
       const rows = await db.query(sql, {
-        replacements: { start: yearStart, end: yearEnd },
+        replacements: { start: startDay, end: endDay },
         type: QueryTypes.SELECT,
       });
 
