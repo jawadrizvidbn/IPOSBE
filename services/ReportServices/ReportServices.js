@@ -1845,10 +1845,10 @@ exports.acrossInvoiceReport = async (req) => {
         "Date & Time": r.DateTime,
         "Invoice No": r.InvoiceNo,
         "Finalized As": r.FinalizedAs,
-        "Clerk Name": r.ClerkName,
-        "Invoice Total": r.InvoiceTotal,
         "Split Tender Card": r.splitTenderCard,
         "Split Tender Cash": r.splitTenderCash,
+        "Clerk Name": r.ClerkName,
+        "Invoice Total": r.InvoiceTotal,
       }));
     })
     .flat();
