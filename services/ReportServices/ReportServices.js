@@ -1732,15 +1732,10 @@ exports.acrossInvoiceReport = async (req) => {
         req.user,
         shopKey
       );
-      let historyDbName;
-      outer: for (const grp of Object.values(active)) {
-        for (const db of grp) {
-          if (db.includes("history")) {
-            historyDbName = db;
-            break outer;
-          }
-        }
-      }
+
+      const historyDbName = Object.values(active)
+        .flat()
+        .find((db) => db.toLowerCase().includes("history"));
       if (!historyDbName) return { shopKey, rows: [] };
 
       const db = createSequelizeInstanceCustom({
