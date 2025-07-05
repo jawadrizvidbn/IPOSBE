@@ -1804,7 +1804,7 @@ exports.acrossInvoiceReport = async (req) => {
         TransactionNum,
         PaymentType,
         TenderAmount,
-        TotalAmount,
+        TotalAmount
         FROM tbldata_splittender
       `;
 
