@@ -1738,8 +1738,21 @@ exports.acrossInvoiceReport = async (req) => {
         .find((db) => db.toLowerCase().includes("history"));
       if (!historyDbName) return { shopKey, rows: [] };
 
+      const stockmasterDbName = Object.values(active)
+        .flat()
+        .find((db) => db.toLowerCase().includes("master"));
+      if (!stockmasterDbName) return { shopKey, rows: [] };
+
       const db = createSequelizeInstanceCustom({
         databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      const stockMasterDb = createSequelizeInstanceCustom({
+        databaseName: stockmasterDbName,
         host: serverHost,
         username: serverUser,
         password: serverPassword,
@@ -1786,6 +1799,22 @@ exports.acrossInvoiceReport = async (req) => {
         ORDER BY datetime;
       `;
 
+      const splitSql = `
+      SELECT
+        TransactionNum,
+        PaymentType,
+        TenderAmount,
+        TotalAmount,
+        FROM tbldata_splittender
+      `;
+
+      const splitRows = await stockMasterDb.query(splitSql, {
+        replacements: {
+          start: startDay,
+          end: endDay,
+        },
+        type: QueryTypes.SELECT,
+      });
       const rows = await db.query(finalSql, {
         replacements: {
           start: startDay,
@@ -1793,7 +1822,19 @@ exports.acrossInvoiceReport = async (req) => {
         },
         type: QueryTypes.SELECT,
       });
-      return { shopKey, rows };
+
+      const updatedRows = rows.map((r) => ({
+        ...r,
+        splitTenderCard:
+          splitRows.find(
+            (s) => s.TransactionNum === r.InvoiceNo && s.PaymentType === "Card"
+          )?.TenderAmount || "-",
+        splitTenderCash:
+          splitRows.find(
+            (s) => s.TransactionNum === r.InvoiceNo && s.PaymentType === "Cash"
+          )?.TenderAmount || "-",
+      }));
+      return { shopKey, rows: updatedRows };
     })
   );
 
@@ -1806,6 +1847,8 @@ exports.acrossInvoiceReport = async (req) => {
         "Finalized As": r.FinalizedAs,
         "Clerk Name": r.ClerkName,
         "Invoice Total": r.InvoiceTotal,
+        "Split Tender Card": r.splitTenderCard,
+        "Split Tender Cash": r.splitTenderCash,
       }));
     })
     .flat();
