@@ -1655,7 +1655,7 @@ exports.acrossInvoiceReport = async (req) => {
 
       const subqs = tables.map((tbl) =>
         `
-        SELECT
+        SELECT DISTINCT
           datetime,
           salenum,
           paymenttype,
