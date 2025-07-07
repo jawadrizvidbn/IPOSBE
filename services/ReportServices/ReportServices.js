@@ -1663,7 +1663,6 @@ exports.acrossInvoiceReport = async (req) => {
           invoicetotal
         FROM ${tbl}
         WHERE datetime BETWEEN :start AND :end
-        GROUP BY hisyear, hismonth, hisday, paymenttype, vatpercentage
       `.trim()
       );
       const unionSql = subqs.join("\nUNION ALL\n");
