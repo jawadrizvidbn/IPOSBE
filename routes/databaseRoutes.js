@@ -153,6 +153,13 @@ router.get(
   checkSuperadmin,
   reportController.acrossRetailWholesaleByProductReport
 );
+
+router.get(
+  "/acrossWholesaleByCategoryReport",
+  checkSuperadmin,
+  reportController.acrossWholesaleByCategoryReport
+);
+
 router.get(
   "/acrossStockOnHandReport",
   checkSuperadmin,

@@ -1102,6 +1102,112 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
   const expectedTables = months.map(
     (month) => `${year}${month}tbldata_current_tran`
   );
+
+  const rawData = await Promise.all(
+    shopKeys.map(async (shopKey) => {
+      const active = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+
+      const historyDbName = Object.values(active)
+        .flat()
+        .find((db) => db.toLowerCase().includes("history"));
+      if (!historyDbName) return { shopKey, rows: [] };
+
+      const stockmasterDbName = Object.values(active)
+        .flat()
+        .find((db) => db.toLowerCase().includes("master"));
+      if (!stockmasterDbName) return { shopKey, rows: [] };
+
+      const db = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      const stockMasterDb = createSequelizeInstanceCustom({
+        databaseName: stockmasterDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      const exist = await db.query(
+        `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
+        {
+          replacements: { db: historyDbName, list: expectedTables },
+          type: QueryTypes.SELECT,
+        }
+      );
+      const tables = exist.map((r) => r.Name);
+      if (!tables.length) return { shopKey, rows: [] };
+
+      const masterMajorQuery = `SELECT MajorNo, MajorDescription FROM tblcategory`;
+      const masterSub1Query = `SELECT MajorNo, Sub1No, Sub1Description FROM tblcategory_sub1`;
+      const masterSub2Query = `SELECT MajorNo, Sub1No, Sub2No, Sub2Description FROM tblcategory_sub2`;
+
+      // const [masterMajorRows, masterSub1Rows, masterSub2Rows] =
+      //   await Promise.all([
+      //     stockMasterDb.query(masterMajorQuery, { type: QueryTypes.SELECT }),
+      //     stockMasterDb.query(masterSub1Query, { type: QueryTypes.SELECT }),
+      //     stockMasterDb.query(masterSub2Query, { type: QueryTypes.SELECT }),
+      //   ]);
+
+      const subqs = tables
+        .map(
+          (tbl) =>
+            `SELECT
+          majorNo,
+          SUM(CASE
+             WHEN CehqueNum IN ('Combo', 'ComboGroup', '') THEN 1
+          ELSE 0
+            END) AS retailQty,
+          SUM(CASE
+            WHEN CehqueNum NOT IN ('Combo', 'ComboGroup', '') THEN 1
+            ELSE 0
+          END) AS wholesaleQty
+        FROM ${tbl}
+        WHERE datetime BETWEEN :start AND :end
+        GROUP BY majorNo;         
+        `
+        )
+        .join("\nUNION ALL\n");
+
+      const finalSql = `
+      SELECT
+      majorNo,
+      retailQty AS retail,
+      wholesaleQty AS wholesale
+      FROM (
+        ${subqs}
+      ) AS all_sales
+      GROUP BY majorNo;
+      `;
+
+      const rows = await db.query(finalSql, {
+        replacements: { start: startDay, end: endDay },
+        type: QueryTypes.SELECT,
+      });
+
+      return { shopKey, rows };
+    })
+  );
+
+  const formattedData = rawData.map(({ shopKey, rows }) => {
+    return rows.map((r) => ({
+      "Shop Name": shopKey,
+      "Major Category": r.majorNo,
+      Retail: r.retail,
+      Wholesale: r.wholesale,
+    }));
+  });
+
+  return { success: true, sortableKeys: [], data: formattedData };
 };
 
 exports.acrossStockOnHandReport = async (req) => {

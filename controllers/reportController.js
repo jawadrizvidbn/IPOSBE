@@ -1318,6 +1318,16 @@ exports.acrossRetailWholesaleByProductReport = async (req, res) => {
   }
 };
 
+exports.acrossWholesaleByCategoryReport = async (req, res) => {
+  try {
+    const results = await reportsService.acrossWholesaleByCategoryReport(req);
+    res.send(results);
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 exports.acrossStockOnHandReport = async (req, res) => {
   try {
     const results = await reportsService.acrossStockOnHandReport(req);
