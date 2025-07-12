@@ -1158,22 +1158,22 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       //     stockMasterDb.query(masterSub2Query, { type: QueryTypes.SELECT }),
       //   ]);
 
+      const saleQtyExpr = isDetailed
+        ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
+        : `1`;
+
       const subqs = tables
         .map(
           (tbl) =>
             `SELECT
           majorNo,
-          SUM(CASE
-             WHEN CehqueNum IN ('Combo', 'ComboGroup', '') THEN 1
-          ELSE 0
-            END) AS retailQty,
-          SUM(CASE
-            WHEN CehqueNum NOT IN ('Combo', 'ComboGroup', '') THEN 1
-            ELSE 0
-          END) AS wholesaleQty
+        ${saleQtyExpr} AS saleQty,
+            CASE
+              WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail'
+              ELSE 'wholesale'
+            END AS saleType
         FROM ${tbl}
-        WHERE datetime BETWEEN :start AND :end
-        GROUP BY majorNo;         
+        WHERE datetime BETWEEN :start AND :end    
         `
         )
         .join("\nUNION ALL\n");
@@ -1181,9 +1181,10 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       const finalSql = `
       SELECT
       majorNo,
-      retailQty,
-      wholesaleQty
+      saleType,
+      SUM(saleQty) AS totalQty
       FROM ${subqs}
+      GROUP BY majorNo
       `;
 
       const rows = await db.query(finalSql, {
