@@ -1203,14 +1203,16 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
     })
   );
 
-  const formattedData = rawData.map(({ shopKey, rows }) => {
-    return rows.map((r) => ({
-      "Shop Name": shopKey,
-      "Major Category": r.majorNo,
-      Retail: r.retail,
-      Wholesale: r.wholesale,
-    }));
-  });
+  const formattedData = rawData
+    .map(({ shopKey, rows }) => {
+      return rows.map((r) => ({
+        "Shop Name": shopKey,
+        "Major Category": r.majorNo,
+        Retail: r.retail,
+        Wholesale: r.wholesale,
+      }));
+    })
+    .flat();
 
   return { success: true, sortableKeys: [], data: formattedData };
 };
