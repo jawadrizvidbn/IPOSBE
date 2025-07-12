@@ -1185,8 +1185,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       wholesaleQty AS wholesale
       FROM (
         ${subqs}
-      ) AS all_sales
-      GROUP BY majorNo;
+      )
       `;
 
       const rows = await db.query(finalSql, {
