@@ -1181,8 +1181,8 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       const finalSql = `
       SELECT
       majorNo,
-      retailQty AS retail,
-      wholesaleQty AS wholesale
+      retailQty,
+      wholesaleQty
       FROM ${subqs}
       `;
 
