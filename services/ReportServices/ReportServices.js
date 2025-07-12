@@ -1151,12 +1151,12 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       const masterSub1Query = `SELECT MajorNo, Sub1No, Sub1Description FROM tblcategory_sub1`;
       const masterSub2Query = `SELECT MajorNo, Sub1No, Sub2No, Sub2Description FROM tblcategory_sub2`;
 
-      // const [masterMajorRows, masterSub1Rows, masterSub2Rows] =
-      //   await Promise.all([
-      //     stockMasterDb.query(masterMajorQuery, { type: QueryTypes.SELECT }),
-      //     stockMasterDb.query(masterSub1Query, { type: QueryTypes.SELECT }),
-      //     stockMasterDb.query(masterSub2Query, { type: QueryTypes.SELECT }),
-      //   ]);
+      const [masterMajorRows, masterSub1Rows, masterSub2Rows] =
+        await Promise.all([
+          stockMasterDb.query(masterMajorQuery, { type: QueryTypes.SELECT }),
+          stockMasterDb.query(masterSub1Query, { type: QueryTypes.SELECT }),
+          stockMasterDb.query(masterSub2Query, { type: QueryTypes.SELECT }),
+        ]);
 
       const saleQtyExpr = isDetailed
         ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
@@ -1194,7 +1194,12 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         type: QueryTypes.SELECT,
       });
 
-      return { shopKey, rows };
+      const updatedRows = rows.map((r) => ({
+        ...r,
+        majorNo: masterMajorRows.find((m) => m.MajorNo === r.majorNo)
+          ?.MajorDescription,
+      }));
+      return { shopKey, rows: updatedRows };
     })
   );
 
