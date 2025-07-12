@@ -1166,7 +1166,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         .map(
           (tbl) =>
             `SELECT
-          majorNo,
+          majorno,
         ${saleQtyExpr} AS saleQty,
             CASE
               WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail'
@@ -1181,9 +1181,11 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       const finalSql = `
       SELECT
       majorNo,
-      saleType,
-      SUM(saleQty) AS totalQty
-      FROM ${subqs}
+      SUM(CASE WHEN saleType = 'retail' THEN saleQty ELSE 0 END) AS retail,
+      SUM(CASE WHEN saleType = 'wholesale' THEN saleQty ELSE 0 END) AS wholesale
+      FROM (
+        ${subqs}
+      ) AS all_sales
       GROUP BY majorNo
       `;
 
