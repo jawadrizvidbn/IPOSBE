@@ -1416,9 +1416,9 @@ GROUP BY ${groupByCols}
 
         // fill in this shop's number
         if (row.saleType === "retail") {
-          pivotMap[compKey].retail = row.totalQty;
+          pivotMap[compKey].retail = Number(row.totalQty) || 0;
         } else {
-          pivotMap[compKey].wholesale = row.totalQty;
+          pivotMap[compKey].wholesale = Number(row.totalQty) || 0;
         }
       }
 
