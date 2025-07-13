@@ -1237,13 +1237,6 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
 //   return { success: true, sortableKeys: [], data: formattedData };
 // };
 
-const { QueryTypes } = require("sequelize");
-const { getYearAndMonthRange } = require("./dateUtils");
-const {
-  databaseController,
-  createSequelizeInstanceCustom,
-} = require("./dbUtils");
-
 exports.acrossWholesaleByCategoryReport = async (req) => {
   // 1) Validate and parse input flags
   const rawKeys = req.query.shopKeys;
