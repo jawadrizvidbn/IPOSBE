@@ -1203,16 +1203,36 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
     })
   );
 
-  const formattedData = rawData
-    .map(({ shopKey, rows }) => {
-      return rows.map((r) => ({
-        "Shop Name": shopKey,
-        "Major Category": r.majorNo,
-        Retail: r.retail,
-        Wholesale: r.wholesale,
-      }));
-    })
-    .flat();
+  const allMajorNos = new Set();
+  rawData.forEach(({ rows }) => {
+    rows.forEach((r) => allMajorNos.add(r.majorNo));
+  });
+
+  // 2. Gather all shopKeys
+  const allShops = rawData.map((r) => r.shopKey);
+
+  // 3. Initialize pivot map with N/A
+  const pivotMap = Array.from(allMajorNos).reduce((map, majorNo) => {
+    // start each row with Major Category and N/A for every shop’s columns
+    const base = { "Major Category": majorNo };
+    allShops.forEach((shop) => {
+      base[`${shop} retail`] = "N/A";
+      base[`${shop} wholesale`] = "N/A";
+    });
+    map[majorNo] = base;
+    return map;
+  }, {});
+
+  // 4. Fill in actual values
+  for (const { shopKey, rows } of rawData) {
+    for (const { majorNo, retail, wholesale } of rows) {
+      pivotMap[majorNo][`${shopKey} retail`] = retail;
+      pivotMap[majorNo][`${shopKey} wholesale`] = wholesale;
+    }
+  }
+
+  // 5. Convert to array for your table
+  const formattedData = Object.values(pivotMap);
 
   return { success: true, sortableKeys: [], data: formattedData };
 };
