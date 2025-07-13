@@ -1074,51 +1074,217 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
   return { success: true, sortableKeys, data };
 };
 
+// exports.acrossWholesaleByCategoryReport = async (req) => {
+//   const rawKeys = req.query.shopKeys;
+//   if (!rawKeys) {
+//     throw new Error("`shopKeys` is required");
+//   }
+//   const shopKeys = String(rawKeys)
+//     .split(",")
+//     .map((s) => s.trim())
+//     .filter(Boolean);
+//   if (!shopKeys.length) {
+//     throw new Error("At least one shopKey must be provided");
+//   }
+
+//   // new: detailed flag
+//   const isDetailed = Boolean(req.query.isDetailed);
+
+//   // 2) common setup
+//   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+//   const startDate = req.query.startDate;
+//   const endDate = req.query.endDate;
+
+//   const startDay = startDate ? `${startDate} 00:00:00` : null;
+//   const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+//   const { year, months } = getYearAndMonthRange(startDate, endDate);
+//   const expectedTables = months.map(
+//     (month) => `${year}${month}tbldata_current_tran`
+//   );
+
+//   const rawData = await Promise.all(
+//     shopKeys.map(async (shopKey) => {
+//       const active = await databaseController.getActiveDatabases(
+//         req.user,
+//         shopKey
+//       );
+
+//       const historyDbName = Object.values(active)
+//         .flat()
+//         .find((db) => db.toLowerCase().includes("history"));
+//       if (!historyDbName) return { shopKey, rows: [] };
+
+//       const stockmasterDbName = Object.values(active)
+//         .flat()
+//         .find((db) => db.toLowerCase().includes("master"));
+//       if (!stockmasterDbName) return { shopKey, rows: [] };
+
+//       const db = createSequelizeInstanceCustom({
+//         databaseName: historyDbName,
+//         host: serverHost,
+//         username: serverUser,
+//         password: serverPassword,
+//         port: serverPort,
+//       });
+
+//       const stockMasterDb = createSequelizeInstanceCustom({
+//         databaseName: stockmasterDbName,
+//         host: serverHost,
+//         username: serverUser,
+//         password: serverPassword,
+//         port: serverPort,
+//       });
+
+//       const exist = await db.query(
+//         `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES
+//          WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
+//         {
+//           replacements: { db: historyDbName, list: expectedTables },
+//           type: QueryTypes.SELECT,
+//         }
+//       );
+//       const tables = exist.map((r) => r.Name);
+//       if (!tables.length) return { shopKey, rows: [] };
+
+//       const masterMajorQuery = `SELECT MajorNo, MajorDescription FROM tblcategory`;
+//       const masterSub1Query = `SELECT MajorNo, Sub1No, Sub1Description FROM tblcategory_sub1`;
+//       const masterSub2Query = `SELECT MajorNo, Sub1No, Sub2No, Sub2Description FROM tblcategory_sub2`;
+
+//       const [masterMajorRows, masterSub1Rows, masterSub2Rows] =
+//         await Promise.all([
+//           stockMasterDb.query(masterMajorQuery, { type: QueryTypes.SELECT }),
+//           stockMasterDb.query(masterSub1Query, { type: QueryTypes.SELECT }),
+//           stockMasterDb.query(masterSub2Query, { type: QueryTypes.SELECT }),
+//         ]);
+
+//       const saleQtyExpr = isDetailed
+//         ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
+//         : `1`;
+
+//       const subqs = tables
+//         .map(
+//           (tbl) =>
+//             `SELECT
+//           majorno,
+//         ${saleQtyExpr} AS saleQty,
+//             CASE
+//               WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail'
+//               ELSE 'wholesale'
+//             END AS saleType
+//         FROM ${tbl}
+//         WHERE datetime BETWEEN :start AND :end
+//         `
+//         )
+//         .join("\nUNION ALL\n");
+
+//       const finalSql = `
+//       SELECT
+//       majorNo,
+//       SUM(CASE WHEN saleType = 'retail' THEN saleQty ELSE 0 END) AS retail,
+//       SUM(CASE WHEN saleType = 'wholesale' THEN saleQty ELSE 0 END) AS wholesale
+//       FROM (
+//         ${subqs}
+//       ) AS all_sales
+//       GROUP BY majorNo
+//       `;
+
+//       const rows = await db.query(finalSql, {
+//         replacements: { start: startDay, end: endDay },
+//         type: QueryTypes.SELECT,
+//       });
+
+//       const updatedRows = rows.map((r) => ({
+//         ...r,
+//         majorNo: masterMajorRows.find((m) => m.MajorNo === r.majorNo)
+//           ?.MajorDescription,
+//       }));
+//       return { shopKey, rows: updatedRows };
+//     })
+//   );
+
+//   const allMajorNos = new Set();
+//   rawData.forEach(({ rows }) => {
+//     rows.forEach((r) => allMajorNos.add(r.majorNo));
+//   });
+
+//   // 2. Gather all shopKeys
+//   const allShops = rawData.map((r) => r.shopKey);
+
+//   // 3. Initialize pivot map with N/A
+//   const pivotMap = Array.from(allMajorNos).reduce((map, majorNo) => {
+//     // start each row with Major Category and N/A for every shop’s columns
+//     const base = { "Major Category": majorNo };
+//     allShops.forEach((shop) => {
+//       base[`${shop} retail`] = 0;
+//       base[`${shop} wholesale`] = 0;
+//     });
+//     map[majorNo] = base;
+//     return map;
+//   }, {});
+
+//   // 4. Fill in actual values
+//   for (const { shopKey, rows } of rawData) {
+//     for (const { majorNo, retail, wholesale } of rows) {
+//       pivotMap[majorNo][`${shopKey} retail`] = retail;
+//       pivotMap[majorNo][`${shopKey} wholesale`] = wholesale;
+//     }
+//   }
+
+//   // 5. Convert to array for your table
+//   const formattedData = Object.values(pivotMap);
+
+//   return { success: true, sortableKeys: [], data: formattedData };
+// };
+
+const { QueryTypes } = require("sequelize");
+const { getYearAndMonthRange } = require("./dateUtils");
+const {
+  databaseController,
+  createSequelizeInstanceCustom,
+} = require("./dbUtils");
+
 exports.acrossWholesaleByCategoryReport = async (req) => {
+  // 1) Validate and parse input flags
   const rawKeys = req.query.shopKeys;
-  if (!rawKeys) {
-    throw new Error("`shopKeys` is required");
-  }
+  if (!rawKeys) throw new Error("`shopKeys` is required");
   const shopKeys = String(rawKeys)
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!shopKeys.length) {
+  if (!shopKeys.length)
     throw new Error("At least one shopKey must be provided");
-  }
 
-  // new: detailed flag
   const isDetailed = Boolean(req.query.isDetailed);
+  const includeSub1 = req.query.sub1 === "true";
+  const includeSub2 = req.query.sub2 === "true";
 
-  // 2) common setup
+  // 2) Connection params & date range
   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
   const startDate = req.query.startDate;
   const endDate = req.query.endDate;
-
   const startDay = startDate ? `${startDate} 00:00:00` : null;
   const endDay = endDate ? `${endDate} 23:59:59` : null;
 
+  // 3) Determine which month‐tables exist
   const { year, months } = getYearAndMonthRange(startDate, endDate);
-  const expectedTables = months.map(
-    (month) => `${year}${month}tbldata_current_tran`
-  );
+  const expectedTables = months.map((m) => `${year}${m}tbldata_current_tran`);
 
+  // 4) Fetch & pivot per shop
   const rawData = await Promise.all(
     shopKeys.map(async (shopKey) => {
+      // find history & master DB names
       const active = await databaseController.getActiveDatabases(
         req.user,
         shopKey
       );
-
       const historyDbName = Object.values(active)
         .flat()
         .find((db) => db.toLowerCase().includes("history"));
-      if (!historyDbName) return { shopKey, rows: [] };
-
       const stockmasterDbName = Object.values(active)
         .flat()
         .find((db) => db.toLowerCase().includes("master"));
-      if (!stockmasterDbName) return { shopKey, rows: [] };
+      if (!historyDbName || !stockmasterDbName) return { shopKey, rows: [] };
 
       const db = createSequelizeInstanceCustom({
         databaseName: historyDbName,
@@ -1127,7 +1293,6 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         password: serverPassword,
         port: serverPort,
       });
-
       const stockMasterDb = createSequelizeInstanceCustom({
         databaseName: stockmasterDbName,
         host: serverHost,
@@ -1136,9 +1301,12 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         port: serverPort,
       });
 
+      // check which tables actually exist
       const exist = await db.query(
-        `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES
-         WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
+        `SELECT TABLE_NAME AS Name
+           FROM INFORMATION_SCHEMA.TABLES
+          WHERE TABLE_SCHEMA = :db
+            AND TABLE_NAME IN (:list)`,
         {
           replacements: { db: historyDbName, list: expectedTables },
           type: QueryTypes.SELECT,
@@ -1147,94 +1315,159 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       const tables = exist.map((r) => r.Name);
       if (!tables.length) return { shopKey, rows: [] };
 
-      const masterMajorQuery = `SELECT MajorNo, MajorDescription FROM tblcategory`;
-      const masterSub1Query = `SELECT MajorNo, Sub1No, Sub1Description FROM tblcategory_sub1`;
-      const masterSub2Query = `SELECT MajorNo, Sub1No, Sub2No, Sub2Description FROM tblcategory_sub2`;
-
+      // pull category master data
       const [masterMajorRows, masterSub1Rows, masterSub2Rows] =
         await Promise.all([
-          stockMasterDb.query(masterMajorQuery, { type: QueryTypes.SELECT }),
-          stockMasterDb.query(masterSub1Query, { type: QueryTypes.SELECT }),
-          stockMasterDb.query(masterSub2Query, { type: QueryTypes.SELECT }),
+          stockMasterDb.query(
+            `SELECT MajorNo, MajorDescription FROM tblcategory`,
+            { type: QueryTypes.SELECT }
+          ),
+          includeSub1
+            ? stockMasterDb.query(
+                `SELECT MajorNo, Sub1No, Sub1Description FROM tblcategory_sub1`,
+                { type: QueryTypes.SELECT }
+              )
+            : Promise.resolve([]),
+          includeSub2
+            ? stockMasterDb.query(
+                `SELECT MajorNo, Sub1No, Sub2No, Sub2Description FROM tblcategory_sub2`,
+                { type: QueryTypes.SELECT }
+              )
+            : Promise.resolve([]),
         ]);
 
+      // dynamic expression for saleQty
       const saleQtyExpr = isDetailed
         ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
         : `1`;
 
+      // build the UNION ALL of per-month selects
       const subqs = tables
-        .map(
-          (tbl) =>
-            `SELECT
-          majorno,
-        ${saleQtyExpr} AS saleQty,
-            CASE
-              WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail'
-              ELSE 'wholesale'
-            END AS saleType
-        FROM ${tbl}
-        WHERE datetime BETWEEN :start AND :end    
-        `
-        )
+        .map((tbl) => {
+          // base select fields
+          const fields = [
+            "majorNo",
+            includeSub1 ? "sub1No" : null,
+            includeSub2 ? "sub2No" : null,
+            `${saleQtyExpr} AS saleQty`,
+            `CASE WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail' ELSE 'wholesale' END AS saleType`,
+          ]
+            .filter(Boolean)
+            .join(",\n    ");
+
+          return `
+  SELECT
+    ${fields}
+  FROM \`${tbl}\`
+  WHERE datetime BETWEEN :start AND :end
+`;
+        })
         .join("\nUNION ALL\n");
 
+      // aggregate flattened results by (major, sub1?, sub2?, saleType)
+      const groupByCols = ["majorNo"]
+        .concat(includeSub1 ? ["sub1No"] : [])
+        .concat(includeSub2 ? ["sub2No"] : [])
+        .concat(["saleType"])
+        .join(", ");
       const finalSql = `
-      SELECT
-      majorNo,
-      SUM(CASE WHEN saleType = 'retail' THEN saleQty ELSE 0 END) AS retail,
-      SUM(CASE WHEN saleType = 'wholesale' THEN saleQty ELSE 0 END) AS wholesale
-      FROM (
-        ${subqs}
-      ) AS all_sales
-      GROUP BY majorNo
-      `;
+SELECT
+  ${groupByCols},
+  SUM(saleQty) AS totalQty
+FROM (
+  ${subqs}
+) AS all_sales
+GROUP BY ${groupByCols}
+`;
 
-      const rows = await db.query(finalSql, {
+      const flatRows = await db.query(finalSql, {
         replacements: { start: startDay, end: endDay },
         type: QueryTypes.SELECT,
       });
 
-      const updatedRows = rows.map((r) => ({
-        ...r,
-        majorNo: masterMajorRows.find((m) => m.MajorNo === r.majorNo)
-          ?.MajorDescription,
-      }));
-      return { shopKey, rows: updatedRows };
+      // pivot per shop for this shopKey
+      const pivotMap = {};
+      for (const row of flatRows) {
+        // build composite key
+        const keyParts = [row.majorNo]
+          .concat(includeSub1 ? [row.sub1No] : [])
+          .concat(includeSub2 ? [row.sub2No] : []);
+        const compKey = keyParts.join("|");
+
+        if (!pivotMap[compKey]) {
+          // lookup descriptions
+          const majDesc =
+            masterMajorRows.find((m) => m.MajorNo === row.majorNo)
+              ?.MajorDescription || row.majorNo;
+          const s1Desc = includeSub1
+            ? masterSub1Rows.find(
+                (s) => s.MajorNo === row.majorNo && s.Sub1No === row.sub1No
+              )?.Sub1Description || row.sub1No
+            : null;
+          const s2Desc = includeSub2
+            ? masterSub2Rows.find(
+                (s) =>
+                  s.MajorNo === row.majorNo &&
+                  s.Sub1No === row.sub1No &&
+                  s.Sub2No === row.sub2No
+              )?.Sub2Description || row.sub2No
+            : null;
+
+          const base = { majorNo: majDesc };
+          if (includeSub1) base.sub1No = s1Desc;
+          if (includeSub2) base.sub2No = s2Desc;
+          base.retail = "-";
+          base.wholesale = "-";
+          pivotMap[compKey] = base;
+        }
+
+        // fill in this shop's number
+        if (row.saleType === "retail") {
+          pivotMap[compKey].retail = row.totalQty;
+        } else {
+          pivotMap[compKey].wholesale = row.totalQty;
+        }
+      }
+
+      // return array of these rows
+      return { shopKey, rows: Object.values(pivotMap) };
     })
   );
 
-  const allMajorNos = new Set();
-  rawData.forEach(({ rows }) => {
-    rows.forEach((r) => allMajorNos.add(r.majorNo));
+  // 5) Final pivot across shops
+  const allShops = shopKeys;
+  // collect every composite key
+  const finalMap = {};
+  rawData.forEach(({ shopKey, rows }) => {
+    rows.forEach((r) => {
+      // reconstruct composite key from the row object
+      const keyParts = [r.majorNo]
+        .concat(includeSub1 ? [r.sub1No] : [])
+        .concat(includeSub2 ? [r.sub2No] : []);
+      const compKey = keyParts.join("|");
+
+      if (!finalMap[compKey]) {
+        // initialize the master row
+        const base = { "Major Category": r.majorNo };
+        if (includeSub1) base["Sub1 Category"] = r.sub1No;
+        if (includeSub2) base["Sub2 Category"] = r.sub2No;
+        // default every shop’s columns to "-"
+        allShops.forEach((shop) => {
+          base[`${shop} retail`] = "-";
+          base[`${shop} wholesale`] = "-";
+        });
+        finalMap[compKey] = base;
+      }
+
+      // overwrite with actual values
+      finalMap[compKey][`${shopKey} retail`] = r.retail;
+      finalMap[compKey][`${shopKey} wholesale`] = r.wholesale;
+    });
   });
 
-  // 2. Gather all shopKeys
-  const allShops = rawData.map((r) => r.shopKey);
-
-  // 3. Initialize pivot map with N/A
-  const pivotMap = Array.from(allMajorNos).reduce((map, majorNo) => {
-    // start each row with Major Category and N/A for every shop’s columns
-    const base = { "Major Category": majorNo };
-    allShops.forEach((shop) => {
-      base[`${shop} retail`] = "N/A";
-      base[`${shop} wholesale`] = "N/A";
-    });
-    map[majorNo] = base;
-    return map;
-  }, {});
-
-  // 4. Fill in actual values
-  for (const { shopKey, rows } of rawData) {
-    for (const { majorNo, retail, wholesale } of rows) {
-      pivotMap[majorNo][`${shopKey} retail`] = retail;
-      pivotMap[majorNo][`${shopKey} wholesale`] = wholesale;
-    }
-  }
-
-  // 5. Convert to array for your table
-  const formattedData = Object.values(pivotMap);
-
-  return { success: true, sortableKeys: [], data: formattedData };
+  // 6) Return the table-ready array
+  const data = Object.values(finalMap);
+  return { success: true, sortableKeys: [], data };
 };
 
 exports.acrossStockOnHandReport = async (req) => {
