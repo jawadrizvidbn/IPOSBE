@@ -1446,8 +1446,8 @@ GROUP BY ${groupByCols}
         if (includeSub2) base["Sub2 Category"] = r.sub2No;
         // default every shop’s columns to "-"
         allShops.forEach((shop) => {
-          base[`${shop} retail`] = "-";
-          base[`${shop} wholesale`] = "-";
+          base[`${shop} retail`] = 0;
+          base[`${shop} wholesale`] = 0;
         });
         finalMap[compKey] = base;
       }
