@@ -1409,8 +1409,8 @@ GROUP BY ${groupByCols}
           const base = { majorNo: majDesc };
           if (includeSub1) base.sub1No = s1Desc;
           if (includeSub2) base.sub2No = s2Desc;
-          base.retail = "-";
-          base.wholesale = "-";
+          base.retail = 0;
+          base.wholesale = 0;
           pivotMap[compKey] = base;
         }
 
