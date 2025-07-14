@@ -1447,8 +1447,8 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
           base[`${shop} retail`] = 0;
           base[`${shop} wholesale`] = 0;
           base[`${shop} totalQty`] = 0;
-          if (includeTotalCost) base[`${shop} totalCost`] = 0;
-          if (includeTotalSelling) base[`${shop} totalSelling`] = 0;
+          if (includeTotalCost) base[`${shop} grandTotalCost`] = 0;
+          if (includeTotalSelling) base[`${shop} grandTotalSelling`] = 0;
           if (includeRetailCost) base[`${shop} retailCost`] = 0;
           if (includeRetailSelling) base[`${shop} retailSelling`] = 0;
           if (includeWholesaleCost) base[`${shop} wholesaleCost`] = 0;
@@ -1460,9 +1460,10 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       finalMap[key][`${shopKey} wholesale`] += Number(r.wholesale) || 0;
       finalMap[key][`${shopKey} totalQty`] += Number(r.totalQty) || 0;
       if (includeTotalCost)
-        finalMap[key][`${shopKey} totalCost`] += Number(r.totalCost) || 0;
+        finalMap[key][`${shopKey} grandTotalCost`] += Number(r.totalCost) || 0;
       if (includeTotalSelling)
-        finalMap[key][`${shopKey} totalSelling`] += Number(r.totalSelling) || 0;
+        finalMap[key][`${shopKey} grandTotalSelling`] +=
+          Number(r.totalSelling) || 0;
       if (includeRetailCost)
         finalMap[key][`${shopKey} retailCost`] += Number(r.retailCost) || 0;
       if (includeRetailSelling)
@@ -1485,8 +1486,8 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       sum +=
         row[`${shop} retail`] +
         row[`${shop} wholesale`] +
-        (includeTotalCost ? row[`${shop} totalCost`] : 0) +
-        (includeTotalSelling ? row[`${shop} totalSelling`] : 0);
+        (includeTotalCost ? row[`${shop} grandTotalCost`] : 0) +
+        (includeTotalSelling ? row[`${shop} grandTotalSelling`] : 0);
     });
     row.total = sum;
   });
@@ -1511,13 +1512,13 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       0
     );
     if (includeTotalCost)
-      totalRow[`${shop} totalCost`] = data.reduce(
-        (a, r) => a + Number(r[`${shop} totalCost`]),
+      totalRow[`${shop} grandTotalCost`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} grandTotalCost`]),
         0
       );
     if (includeTotalSelling)
-      totalRow[`${shop} totalSelling`] = data.reduce(
-        (a, r) => a + Number(r[`${shop} totalSelling`]),
+      totalRow[`${shop} grandTotalSelling`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} grandTotalSelling`]),
         0
       );
     if (includeRetailCost)
