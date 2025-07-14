@@ -1516,7 +1516,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         0
       );
     if (includeTotalSelling)
-      totalRow[`${shop} total sellingxs`] = data.reduce(
+      totalRow[`${shop} total selling`] = data.reduce(
         (acc, r) => acc + r[`${shop} total selling`],
         0
       );
