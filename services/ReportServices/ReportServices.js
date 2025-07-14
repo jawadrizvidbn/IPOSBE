@@ -1407,20 +1407,22 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
           if (includeWholesaleSelling) base.wholesaleSelling = 0;
           pivot[key] = base;
         }
-        // accumulate
-        pivot[key].totalQty += r.totalQty;
+        // accumulate with numeric parsing
+        const qty = Number(r.totalQty) || 0;
+        const cost = Number(r.totalCost) || 0;
+        const sell = Number(r.totalSelling) || 0;
+        pivot[key].totalQty += qty;
         if (r.saleType === "retail") {
-          pivot[key].retail += r.totalQty;
-          if (includeRetailCost) pivot[key].retailCost += r.totalCost;
-          if (includeRetailSelling) pivot[key].retailSelling += r.totalSelling;
+          pivot[key].retail += qty;
+          if (includeRetailCost) pivot[key].retailCost += cost;
+          if (includeRetailSelling) pivot[key].retailSelling += sell;
         } else {
-          pivot[key].wholesale += r.totalQty;
-          if (includeWholesaleCost) pivot[key].wholesaleCost += r.totalCost;
-          if (includeWholesaleSelling)
-            pivot[key].wholesaleSelling += r.totalSelling;
+          pivot[key].wholesale += qty;
+          if (includeWholesaleCost) pivot[key].wholesaleCost += cost;
+          if (includeWholesaleSelling) pivot[key].wholesaleSelling += sell;
         }
-        if (includeTotalCost) pivot[key].totalCost += r.totalCost;
-        if (includeTotalSelling) pivot[key].totalSelling += r.totalSelling;
+        if (includeTotalCost) pivot[key].totalCost += cost;
+        if (includeTotalSelling) pivot[key].totalSelling += sell;
       }
 
       return { shopKey, rows: Object.values(pivot) };
@@ -1436,7 +1438,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         .concat(includeSub2 ? [r.sub2No] : [])
         .join("|");
       if (!finalMap[key]) {
-        const base = { "Major Category": r.majorNo };
+        const base = { "Major Category": r.majorNo, totalQty: 0 };
         if (includeSub1) base["Sub1 Category"] = r.sub1No;
         if (includeSub2) base["Sub2 Category"] = r.sub2No;
         shopKeys.forEach((shop) => {
@@ -1452,70 +1454,76 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         });
         finalMap[key] = base;
       }
-      finalMap[key][`${shopKey} retail`] += r.retail;
-      finalMap[key][`${shopKey} wholesale`] += r.wholesale;
-      finalMap[key][`${shopKey} totalQty`] += r.totalQty;
+      finalMap[key][`${shopKey} retail`] += Number(r.retail) || 0;
+      finalMap[key][`${shopKey} wholesale`] += Number(r.wholesale) || 0;
+      finalMap[key][`${shopKey} totalQty`] += Number(r.totalQty) || 0;
       if (includeTotalCost)
-        finalMap[key][`${shopKey} totalCost`] += r.totalCost;
+        finalMap[key][`${shopKey} totalCost`] += Number(r.totalCost) || 0;
       if (includeTotalSelling)
-        finalMap[key][`${shopKey} totalSelling`] += r.totalSelling;
+        finalMap[key][`${shopKey} totalSelling`] += Number(r.totalSelling) || 0;
       if (includeRetailCost)
-        finalMap[key][`${shopKey} retailCost`] += r.retailCost;
+        finalMap[key][`${shopKey} retailCost`] += Number(r.retailCost) || 0;
       if (includeRetailSelling)
-        finalMap[key][`${shopKey} retailSelling`] += r.retailSelling;
+        finalMap[key][`${shopKey} retailSelling`] +=
+          Number(r.retailSelling) || 0;
       if (includeWholesaleCost)
-        finalMap[key][`${shopKey} wholesaleCost`] += r.wholesaleCost;
+        finalMap[key][`${shopKey} wholesaleCost`] +=
+          Number(r.wholesaleCost) || 0;
       if (includeWholesaleSelling)
-        finalMap[key][`${shopKey} wholesaleSelling`] += r.wholesaleSelling;
+        finalMap[key][`${shopKey} wholesaleSelling`] +=
+          Number(r.wholesaleSelling) || 0;
     });
   });
 
   const data = Object.values(finalMap);
   // add totals row
-  const totalRow = { "Major Category": "Total" };
+  const totalRow = {
+    "Major Category": "Total",
+    totalQty: data.reduce((sum, row) => sum + Number(row.totalQty), 0),
+  };
   if (includeSub1) totalRow["Sub1 Category"] = "";
   if (includeSub2) totalRow["Sub2 Category"] = "";
   shopKeys.forEach((shop) => {
     totalRow[`${shop} retail`] = data.reduce(
-      (a, r) => a + r[`${shop} retail`],
+      (a, r) => a + Number(r[`${shop} retail`]),
       0
     );
     totalRow[`${shop} wholesale`] = data.reduce(
-      (a, r) => a + r[`${shop} wholesale`],
+      (a, r) => a + Number(r[`${shop} wholesale`]),
       0
     );
     totalRow[`${shop} totalQty`] = data.reduce(
-      (a, r) => a + r[`${shop} totalQty`],
+      (a, r) => a + Number(r[`${shop} totalQty`]),
       0
     );
     if (includeTotalCost)
       totalRow[`${shop} totalCost`] = data.reduce(
-        (a, r) => a + r[`${shop} totalCost`],
+        (a, r) => a + Number(r[`${shop} totalCost`]),
         0
       );
     if (includeTotalSelling)
       totalRow[`${shop} totalSelling`] = data.reduce(
-        (a, r) => a + r[`${shop} totalSelling`],
+        (a, r) => a + Number(r[`${shop} totalSelling`]),
         0
       );
     if (includeRetailCost)
       totalRow[`${shop} retailCost`] = data.reduce(
-        (a, r) => a + r[`${shop} retailCost`],
+        (a, r) => a + Number(r[`${shop} retailCost`]),
         0
       );
     if (includeRetailSelling)
       totalRow[`${shop} retailSelling`] = data.reduce(
-        (a, r) => a + r[`${shop} retailSelling`],
+        (a, r) => a + Number(r[`${shop} retailSelling`]),
         0
       );
     if (includeWholesaleCost)
       totalRow[`${shop} wholesaleCost`] = data.reduce(
-        (a, r) => a + r[`${shop} wholesaleCost`],
+        (a, r) => a + Number(r[`${shop} wholesaleCost`]),
         0
       );
     if (includeWholesaleSelling)
       totalRow[`${shop} wholesaleSelling`] = data.reduce(
-        (a, r) => a + r[`${shop} wholesaleSelling`],
+        (a, r) => a + Number(r[`${shop} wholesaleSelling`]),
         0
       );
   });
