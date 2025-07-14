@@ -1354,6 +1354,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         .concat(includeSub2 ? ["sub2No"] : [])
         .concat(["saleType"])
         .join(", ");
+
       const finalSql = `SELECT 
       ${groupCols}, 
       SUM(saleQty) AS totalQty, 
