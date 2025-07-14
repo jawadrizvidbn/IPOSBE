@@ -1429,6 +1429,8 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
     })
   );
 
+  const allShops = shopKeys;
+
   // final pivot across shops
   const finalMap = {};
   rawData.forEach(({ shopKey, rows }) => {
