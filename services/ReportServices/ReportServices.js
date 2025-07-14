@@ -1440,7 +1440,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         .concat(includeSub2 ? [r.sub2No] : [])
         .join("|");
       if (!finalMap[key]) {
-        const base = { "Major Category": r.majorNo, totalQty: 0 };
+        const base = { "Major Category": r.majorNo };
         if (includeSub1) base["Sub1 Category"] = r.sub1No;
         if (includeSub2) base["Sub2 Category"] = r.sub2No;
         shopKeys.forEach((shop) => {
