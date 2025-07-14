@@ -1252,6 +1252,10 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
   const includeSub2 = req.query.sub2 === "true";
   const includeTotalCost = req.query.totalCost === "true";
   const includeTotalSelling = req.query.totalSelling === "true";
+  const includeRetailCost = req.query.retailCost === "true";
+  const includeRetailSelling = req.query.retailSelling === "true";
+  const includeWholesaleCost = req.query.wholesaleCost === "true";
+  const includeWholesaleSelling = req.query.wholesaleSelling === "true";
 
   // 2) Connection params & date range
   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
@@ -1267,7 +1271,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
   // 4) Fetch & pivot per shop
   const rawData = await Promise.all(
     shopKeys.map(async (shopKey) => {
-      // find history & master DB names
+      // DB names
       const active = await databaseController.getActiveDatabases(
         req.user,
         shopKey
@@ -1295,12 +1299,9 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         port: serverPort,
       });
 
-      // check which tables actually exist
+      // existing tables
       const exist = await db.query(
-        `SELECT TABLE_NAME AS Name
-           FROM INFORMATION_SCHEMA.TABLES
-          WHERE TABLE_SCHEMA = :db
-            AND TABLE_NAME IN (:list)`,
+        `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
         {
           replacements: { db: historyDbName, list: expectedTables },
           type: QueryTypes.SELECT,
@@ -1309,7 +1310,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       const tables = exist.map((r) => r.Name);
       if (!tables.length) return { shopKey, rows: [] };
 
-      // pull category master data
+      // masters
       const [masterMajorRows, masterSub1Rows, masterSub2Rows] =
         await Promise.all([
           stockMasterDb.query(
@@ -1330,199 +1331,193 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
             : Promise.resolve([]),
         ]);
 
-      // // dynamic expression for saleQty
-      // const saleQtyExpr = isDetailed
-      //   ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
-      //   : `1`;
-
-      const saleQtyExpr = `1`;
-      // build the UNION ALL of per-month selects
+      // build subqueries
       const subqs = tables
         .map((tbl) => {
-          // base select fields
           const fields = [
             "majorNo",
             includeSub1 ? "sub1No" : null,
             includeSub2 ? "sub2No" : null,
-            `${saleQtyExpr} AS saleQty`,
+            `1 AS saleQty`,
             `averagecostprice * qty AS totalCost`,
-            `linetotal AS totalSelling`,
+            `linetotal        AS totalSelling`,
             `CASE WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail' ELSE 'wholesale' END AS saleType`,
           ]
             .filter(Boolean)
             .join(",\n    ");
-
-          return `
-            SELECT
-              ${fields}
-          FROM ${tbl}
-          WHERE datetime BETWEEN :start AND :end
-          `;
+          return `SELECT\n    ${fields}\n  FROM \`${tbl}\`\n  WHERE datetime BETWEEN :start AND :end`;
         })
         .join("\nUNION ALL\n");
 
-      // aggregate flattened results by (major, sub1?, sub2?, saleType)
-      const groupByCols = ["majorNo"]
+      const groupCols = ["majorNo"]
         .concat(includeSub1 ? ["sub1No"] : [])
         .concat(includeSub2 ? ["sub2No"] : [])
         .concat(["saleType"])
         .join(", ");
-
-      const finalSql = `
-        SELECT
-          ${groupByCols},
-          SUM(saleQty) AS totalQty,
-          SUM(totalCost) AS totalCost,
-          SUM(totalSelling) AS totalSelling
-        FROM (
-          ${subqs}
-        ) AS all_sales
-        GROUP BY ${groupByCols}
-        `;
+      const finalSql = `SELECT 
+      ${groupCols}, 
+      SUM(saleQty) AS totalQty, 
+      SUM(totalCost) AS totalCost, 
+      SUM(totalSelling) AS totalSelling 
+      FROM ( ${subqs} ) 
+      AS 
+      all_sales GROUP BY ${groupCols}`;
 
       const flatRows = await db.query(finalSql, {
         replacements: { start: startDay, end: endDay },
         type: QueryTypes.SELECT,
       });
 
-      // pivot per shop for this shopKey
-      const pivotMap = {};
-      for (const row of flatRows) {
-        // build composite key
-        const keyParts = [row.majorNo]
-          .concat(includeSub1 ? [row.sub1No] : [])
-          .concat(includeSub2 ? [row.sub2No] : []);
-        const compKey = keyParts.join("|");
-
-        if (!pivotMap[compKey]) {
-          // lookup descriptions
+      // pivot per shop
+      const pivot = {};
+      for (const r of flatRows) {
+        const key = [r.majorNo]
+          .concat(includeSub1 ? [r.sub1No] : [])
+          .concat(includeSub2 ? [r.sub2No] : [])
+          .join("|");
+        if (!pivot[key]) {
           const majDesc =
-            masterMajorRows.find((m) => m.MajorNo === row.majorNo)
-              ?.MajorDescription || row.majorNo;
+            masterMajorRows.find((m) => m.MajorNo === r.majorNo)
+              ?.MajorDescription || r.majorNo;
           const s1Desc = includeSub1
             ? masterSub1Rows.find(
-                (s) => s.MajorNo === row.majorNo && s.Sub1No === row.sub1No
-              )?.Sub1Description || row.sub1No
+                (s) => s.MajorNo === r.majorNo && s.Sub1No === r.sub1No
+              )?.Sub1Description || r.sub1No
             : null;
           const s2Desc = includeSub2
             ? masterSub2Rows.find(
                 (s) =>
-                  s.MajorNo === row.majorNo &&
-                  s.Sub1No === row.sub1No &&
-                  s.Sub2No === row.sub2No
-              )?.Sub2Description || row.sub2No
+                  s.MajorNo === r.majorNo &&
+                  s.Sub1No === r.sub1No &&
+                  s.Sub2No === r.sub2No
+              )?.Sub2Description || r.sub2No
             : null;
-
           const base = { majorNo: majDesc };
           if (includeSub1) base.sub1No = s1Desc;
           if (includeSub2) base.sub2No = s2Desc;
           base.retail = 0;
           base.wholesale = 0;
+          base.totalQty = 0;
           if (includeTotalCost) base.totalCost = 0;
           if (includeTotalSelling) base.totalSelling = 0;
-          pivotMap[compKey] = base;
+          if (includeRetailCost) base.retailCost = 0;
+          if (includeRetailSelling) base.retailSelling = 0;
+          if (includeWholesaleCost) base.wholesaleCost = 0;
+          if (includeWholesaleSelling) base.wholesaleSelling = 0;
+          pivot[key] = base;
         }
-
-        // fill in this shop's number
-        if (row.saleType === "retail") {
-          pivotMap[compKey].retail = Number(row.totalQty) || 0;
-          if (includeTotalCost)
-            pivotMap[compKey].totalCost = Number(row.totalCost) || 0;
-          if (includeTotalSelling)
-            pivotMap[compKey].totalSelling = Number(row.totalSelling) || 0;
+        // accumulate
+        pivot[key].totalQty += r.totalQty;
+        if (r.saleType === "retail") {
+          pivot[key].retail += r.totalQty;
+          if (includeRetailCost) pivot[key].retailCost += r.totalCost;
+          if (includeRetailSelling) pivot[key].retailSelling += r.totalSelling;
         } else {
-          pivotMap[compKey].wholesale = Number(row.totalQty) || 0;
-          if (includeTotalCost)
-            pivotMap[compKey].totalCost = Number(row.totalCost) || 0;
-          if (includeTotalSelling)
-            pivotMap[compKey].totalSelling = Number(row.totalSelling) || 0;
+          pivot[key].wholesale += r.totalQty;
+          if (includeWholesaleCost) pivot[key].wholesaleCost += r.totalCost;
+          if (includeWholesaleSelling)
+            pivot[key].wholesaleSelling += r.totalSelling;
         }
+        if (includeTotalCost) pivot[key].totalCost += r.totalCost;
+        if (includeTotalSelling) pivot[key].totalSelling += r.totalSelling;
       }
 
-      // return array of these rows
-      return { shopKey, rows: Object.values(pivotMap) };
+      return { shopKey, rows: Object.values(pivot) };
     })
   );
 
-  // 5) Final pivot across shops
-  const allShops = shopKeys;
-  // collect every composite key
+  // final pivot across shops
   const finalMap = {};
   rawData.forEach(({ shopKey, rows }) => {
     rows.forEach((r) => {
-      // reconstruct composite key from the row object
-      const keyParts = [r.majorNo]
+      const key = [r.majorNo]
         .concat(includeSub1 ? [r.sub1No] : [])
-        .concat(includeSub2 ? [r.sub2No] : []);
-      const compKey = keyParts.join("|");
-
-      if (!finalMap[compKey]) {
-        // initialize the master row
+        .concat(includeSub2 ? [r.sub2No] : [])
+        .join("|");
+      if (!finalMap[key]) {
         const base = { "Major Category": r.majorNo };
         if (includeSub1) base["Sub1 Category"] = r.sub1No;
         if (includeSub2) base["Sub2 Category"] = r.sub2No;
-        // default every shop’s columns to "-"
-        allShops.forEach((shop) => {
+        shopKeys.forEach((shop) => {
           base[`${shop} retail`] = 0;
           base[`${shop} wholesale`] = 0;
-          if (includeTotalCost) base[`${shop} total cost`] = 0;
-          if (includeTotalSelling) base[`${shop} total selling`] = 0;
+          base[`${shop} totalQty`] = 0;
+          if (includeTotalCost) base[`${shop} totalCost`] = 0;
+          if (includeTotalSelling) base[`${shop} totalSelling`] = 0;
+          if (includeRetailCost) base[`${shop} retailCost`] = 0;
+          if (includeRetailSelling) base[`${shop} retailSelling`] = 0;
+          if (includeWholesaleCost) base[`${shop} wholesaleCost`] = 0;
+          if (includeWholesaleSelling) base[`${shop} wholesaleSelling`] = 0;
         });
-        finalMap[compKey] = base;
+        finalMap[key] = base;
       }
-
-      // overwrite with actual values
-      finalMap[compKey][`${shopKey} retail`] = r.retail;
-      finalMap[compKey][`${shopKey} wholesale`] = r.wholesale;
+      finalMap[key][`${shopKey} retail`] += r.retail;
+      finalMap[key][`${shopKey} wholesale`] += r.wholesale;
+      finalMap[key][`${shopKey} totalQty`] += r.totalQty;
       if (includeTotalCost)
-        finalMap[compKey][`${shopKey} total cost`] = r.totalCost;
+        finalMap[key][`${shopKey} totalCost`] += r.totalCost;
       if (includeTotalSelling)
-        finalMap[compKey][`${shopKey} total selling`] = r.totalSelling;
+        finalMap[key][`${shopKey} totalSelling`] += r.totalSelling;
+      if (includeRetailCost)
+        finalMap[key][`${shopKey} retailCost`] += r.retailCost;
+      if (includeRetailSelling)
+        finalMap[key][`${shopKey} retailSelling`] += r.retailSelling;
+      if (includeWholesaleCost)
+        finalMap[key][`${shopKey} wholesaleCost`] += r.wholesaleCost;
+      if (includeWholesaleSelling)
+        finalMap[key][`${shopKey} wholesaleSelling`] += r.wholesaleSelling;
     });
   });
 
-  // 6) Return the table-ready array
   const data = Object.values(finalMap);
-
-  // 7) Add row totals
-  data.forEach((row) => {
-    let sum = 0;
-    allShops.forEach((shop) => {
-      sum +=
-        row[`${shop} retail`] +
-        row[`${shop} wholesale`] +
-        (includeTotalCost ? row[`${shop} total cost`] : 0) +
-        (includeTotalSelling ? row[`${shop} total selling`] : 0);
-    });
-    row.total = sum;
-  });
-
-  // 8) Add column totals
+  // add totals row
   const totalRow = { "Major Category": "Total" };
   if (includeSub1) totalRow["Sub1 Category"] = "";
   if (includeSub2) totalRow["Sub2 Category"] = "";
-  allShops.forEach((shop) => {
+  shopKeys.forEach((shop) => {
     totalRow[`${shop} retail`] = data.reduce(
-      (acc, r) => acc + r[`${shop} retail`],
+      (a, r) => a + r[`${shop} retail`],
       0
     );
     totalRow[`${shop} wholesale`] = data.reduce(
-      (acc, r) => acc + r[`${shop} wholesale`],
+      (a, r) => a + r[`${shop} wholesale`],
+      0
+    );
+    totalRow[`${shop} totalQty`] = data.reduce(
+      (a, r) => a + r[`${shop} totalQty`],
       0
     );
     if (includeTotalCost)
-      totalRow[`${shop} total cost`] = data.reduce(
-        (acc, r) => acc + r[`${shop} total cost`],
+      totalRow[`${shop} totalCost`] = data.reduce(
+        (a, r) => a + r[`${shop} totalCost`],
         0
       );
     if (includeTotalSelling)
-      totalRow[`${shop} total selling`] = data.reduce(
-        (acc, r) => acc + r[`${shop} total selling`],
+      totalRow[`${shop} totalSelling`] = data.reduce(
+        (a, r) => a + r[`${shop} totalSelling`],
+        0
+      );
+    if (includeRetailCost)
+      totalRow[`${shop} retailCost`] = data.reduce(
+        (a, r) => a + r[`${shop} retailCost`],
+        0
+      );
+    if (includeRetailSelling)
+      totalRow[`${shop} retailSelling`] = data.reduce(
+        (a, r) => a + r[`${shop} retailSelling`],
+        0
+      );
+    if (includeWholesaleCost)
+      totalRow[`${shop} wholesaleCost`] = data.reduce(
+        (a, r) => a + r[`${shop} wholesaleCost`],
+        0
+      );
+    if (includeWholesaleSelling)
+      totalRow[`${shop} wholesaleSelling`] = data.reduce(
+        (a, r) => a + r[`${shop} wholesaleSelling`],
         0
       );
   });
-  totalRow.total = data.reduce((acc, r) => acc + r.total, 0);
-
   data.push(totalRow);
 
   return { success: true, sortableKeys: [], data };
