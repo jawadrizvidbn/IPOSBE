@@ -1460,6 +1460,34 @@ GROUP BY ${groupByCols}
 
   // 6) Return the table-ready array
   const data = Object.values(finalMap);
+
+  // 7) Add row totals
+  data.forEach((row) => {
+    let sum = 0;
+    allShops.forEach((shop) => {
+      sum += row[`${shop} retail`] + row[`${shop} wholesale`];
+    });
+    row.total = sum;
+  });
+
+  // 8) Add column totals
+  const totalRow = { "Major Category": "Total" };
+  if (includeSub1) totalRow["Sub1 Category"] = "";
+  if (includeSub2) totalRow["Sub2 Category"] = "";
+  allShops.forEach((shop) => {
+    totalRow[`${shop} retail`] = data.reduce(
+      (acc, r) => acc + r[`${shop} retail`],
+      0
+    );
+    totalRow[`${shop} wholesale`] = data.reduce(
+      (acc, r) => acc + r[`${shop} wholesale`],
+      0
+    );
+  });
+  totalRow.total = data.reduce((acc, r) => acc + r.total, 0);
+
+  data.push(totalRow);
+
   return { success: true, sortableKeys: [], data };
 };
 
