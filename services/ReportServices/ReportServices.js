@@ -1343,17 +1343,19 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
             includeSub1 ? "sub1No" : null,
             includeSub2 ? "sub2No" : null,
             `${saleQtyExpr} AS saleQty`,
+            `averagecostprice * qty AS totalCost`,
+            `linetotal AS totalSelling`,
             `CASE WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail' ELSE 'wholesale' END AS saleType`,
           ]
             .filter(Boolean)
             .join(",\n    ");
 
           return `
-  SELECT
-    ${fields}
-  FROM \`${tbl}\`
-  WHERE datetime BETWEEN :start AND :end
-`;
+            SELECT
+              ${fields}
+          FROM ${tbl}
+          WHERE datetime BETWEEN :start AND :end
+          `;
         })
         .join("\nUNION ALL\n");
 
@@ -1363,15 +1365,18 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         .concat(includeSub2 ? ["sub2No"] : [])
         .concat(["saleType"])
         .join(", ");
+
       const finalSql = `
-SELECT
-  ${groupByCols},
-  SUM(saleQty) AS totalQty
-FROM (
-  ${subqs}
-) AS all_sales
-GROUP BY ${groupByCols}
-`;
+        SELECT
+          ${groupByCols},
+          SUM(saleQty) AS totalQty,
+          SUM(totalCost) AS totalCost,
+          SUM(totalSelling) AS totalSelling
+        FROM (
+          ${subqs}
+        ) AS all_sales
+        GROUP BY ${groupByCols}
+        `;
 
       const flatRows = await db.query(finalSql, {
         replacements: { start: startDay, end: endDay },
@@ -1448,6 +1453,8 @@ GROUP BY ${groupByCols}
         allShops.forEach((shop) => {
           base[`${shop} retail`] = 0;
           base[`${shop} wholesale`] = 0;
+          base[`${shop} total cost`] = 0;
+          base[`${shop} total selling`] = 0;
         });
         finalMap[compKey] = base;
       }
@@ -1455,6 +1462,8 @@ GROUP BY ${groupByCols}
       // overwrite with actual values
       finalMap[compKey][`${shopKey} retail`] = r.retail;
       finalMap[compKey][`${shopKey} wholesale`] = r.wholesale;
+      finalMap[compKey][`${shopKey} total cost`] = r.totalCost;
+      finalMap[compKey][`${shopKey} total selling`] = r.totalSelling;
     });
   });
 
