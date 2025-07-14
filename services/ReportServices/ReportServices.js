@@ -1416,14 +1416,20 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
           if (includeSub2) base.sub2No = s2Desc;
           base.retail = 0;
           base.wholesale = 0;
+          base.totalCost = 0;
+          base.totalSelling = 0;
           pivotMap[compKey] = base;
         }
 
         // fill in this shop's number
         if (row.saleType === "retail") {
           pivotMap[compKey].retail = Number(row.totalQty) || 0;
+          pivotMap[compKey].totalCost = Number(row.totalCost) || 0;
+          pivotMap[compKey].totalSelling = Number(row.totalSelling) || 0;
         } else {
           pivotMap[compKey].wholesale = Number(row.totalQty) || 0;
+          pivotMap[compKey].totalCost = Number(row.totalCost) || 0;
+          pivotMap[compKey].totalSelling = Number(row.totalSelling) || 0;
         }
       }
 
