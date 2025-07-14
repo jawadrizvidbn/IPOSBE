@@ -1248,9 +1248,10 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
   if (!shopKeys.length)
     throw new Error("At least one shopKey must be provided");
 
-  const isDetailed = Boolean(req.query.isDetailed);
   const includeSub1 = req.query.sub1 === "true";
   const includeSub2 = req.query.sub2 === "true";
+  const includeTotalCost = req.query.totalCost === "true";
+  const includeTotalSelling = req.query.totalSelling === "true";
 
   // 2) Connection params & date range
   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
@@ -1329,11 +1330,12 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
             : Promise.resolve([]),
         ]);
 
-      // dynamic expression for saleQty
-      const saleQtyExpr = isDetailed
-        ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
-        : `1`;
+      // // dynamic expression for saleQty
+      // const saleQtyExpr = isDetailed
+      //   ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
+      //   : `1`;
 
+      const saleQtyExpr = `1`;
       // build the UNION ALL of per-month selects
       const subqs = tables
         .map((tbl) => {
@@ -1416,20 +1418,24 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
           if (includeSub2) base.sub2No = s2Desc;
           base.retail = 0;
           base.wholesale = 0;
-          base.totalCost = 0;
-          base.totalSelling = 0;
+          if (includeTotalCost) base.totalCost = 0;
+          if (includeTotalSelling) base.totalSelling = 0;
           pivotMap[compKey] = base;
         }
 
         // fill in this shop's number
         if (row.saleType === "retail") {
           pivotMap[compKey].retail = Number(row.totalQty) || 0;
-          pivotMap[compKey].totalCost = Number(row.totalCost) || 0;
-          pivotMap[compKey].totalSelling = Number(row.totalSelling) || 0;
+          if (includeTotalCost)
+            pivotMap[compKey].totalCost = Number(row.totalCost) || 0;
+          if (includeTotalSelling)
+            pivotMap[compKey].totalSelling = Number(row.totalSelling) || 0;
         } else {
           pivotMap[compKey].wholesale = Number(row.totalQty) || 0;
-          pivotMap[compKey].totalCost = Number(row.totalCost) || 0;
-          pivotMap[compKey].totalSelling = Number(row.totalSelling) || 0;
+          if (includeTotalCost)
+            pivotMap[compKey].totalCost = Number(row.totalCost) || 0;
+          if (includeTotalSelling)
+            pivotMap[compKey].totalSelling = Number(row.totalSelling) || 0;
         }
       }
 
@@ -1459,8 +1465,8 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         allShops.forEach((shop) => {
           base[`${shop} retail`] = 0;
           base[`${shop} wholesale`] = 0;
-          base[`${shop} total cost`] = 0;
-          base[`${shop} total selling`] = 0;
+          if (includeTotalCost) base[`${shop} total cost`] = 0;
+          if (includeTotalSelling) base[`${shop} total selling`] = 0;
         });
         finalMap[compKey] = base;
       }
@@ -1468,8 +1474,10 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       // overwrite with actual values
       finalMap[compKey][`${shopKey} retail`] = r.retail;
       finalMap[compKey][`${shopKey} wholesale`] = r.wholesale;
-      finalMap[compKey][`${shopKey} total cost`] = r.totalCost;
-      finalMap[compKey][`${shopKey} total selling`] = r.totalSelling;
+      if (includeTotalCost)
+        finalMap[compKey][`${shopKey} total cost`] = r.totalCost;
+      if (includeTotalSelling)
+        finalMap[compKey][`${shopKey} total selling`] = r.totalSelling;
     });
   });
 
@@ -1483,8 +1491,8 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       sum +=
         row[`${shop} retail`] +
         row[`${shop} wholesale`] +
-        row[`${shop} total cost`] +
-        row[`${shop} total selling`];
+        (includeTotalCost ? row[`${shop} total cost`] : 0) +
+        (includeTotalSelling ? row[`${shop} total selling`] : 0);
     });
     row.total = sum;
   });
@@ -1502,14 +1510,16 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       (acc, r) => acc + r[`${shop} wholesale`],
       0
     );
-    totalRow[`${shop} total cost`] = data.reduce(
-      (acc, r) => acc + r[`${shop} total cost`],
-      0
-    );
-    totalRow[`${shop} total selling`] = data.reduce(
-      (acc, r) => acc + r[`${shop} total selling`],
-      0
-    );
+    if (includeTotalCost)
+      totalRow[`${shop} total cost`] = data.reduce(
+        (acc, r) => acc + r[`${shop} total cost`],
+        0
+      );
+    if (includeTotalSelling)
+      totalRow[`${shop} total sellingxs`] = data.reduce(
+        (acc, r) => acc + r[`${shop} total selling`],
+        0
+      );
   });
   totalRow.total = data.reduce((acc, r) => acc + r.total, 0);
 
