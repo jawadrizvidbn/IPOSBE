@@ -1480,7 +1480,11 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
   data.forEach((row) => {
     let sum = 0;
     allShops.forEach((shop) => {
-      sum += row[`${shop} retail`] + row[`${shop} wholesale`];
+      sum +=
+        row[`${shop} retail`] +
+        row[`${shop} wholesale`] +
+        row[`${shop} total cost`] +
+        row[`${shop} total selling`];
     });
     row.total = sum;
   });
@@ -1496,6 +1500,14 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
     );
     totalRow[`${shop} wholesale`] = data.reduce(
       (acc, r) => acc + r[`${shop} wholesale`],
+      0
+    );
+    totalRow[`${shop} total cost`] = data.reduce(
+      (acc, r) => acc + r[`${shop} total cost`],
+      0
+    );
+    totalRow[`${shop} total selling`] = data.reduce(
+      (acc, r) => acc + r[`${shop} total selling`],
       0
     );
   });
