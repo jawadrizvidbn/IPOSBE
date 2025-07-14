@@ -1476,10 +1476,22 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
   });
 
   const data = Object.values(finalMap);
+
+  data.forEach((row) => {
+    let sum = 0;
+    allShops.forEach((shop) => {
+      sum +=
+        row[`${shop} retail`] +
+        row[`${shop} wholesale`] +
+        (includeTotalCost ? row[`${shop} totalCost`] : 0) +
+        (includeTotalSelling ? row[`${shop} totalSelling`] : 0);
+    });
+    row.total = sum;
+  });
+
   // add totals row
   const totalRow = {
     "Major Category": "Total",
-    totalQty: data.reduce((sum, row) => sum + Number(row.totalQty), 0),
   };
   if (includeSub1) totalRow["Sub1 Category"] = "";
   if (includeSub2) totalRow["Sub2 Category"] = "";
@@ -1527,6 +1539,9 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         0
       );
   });
+
+  totalRow.total = data.reduce((acc, r) => acc + r.total, 0);
+
   data.push(totalRow);
 
   return { success: true, sortableKeys: [], data };
