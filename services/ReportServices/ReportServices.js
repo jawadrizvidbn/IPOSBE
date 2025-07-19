@@ -1239,6 +1239,7 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
 
 exports.acrossWholesaleByCategoryReport = async (req) => {
   // 1) Validate and parse input flags
+  console.log("user", req.user);
   const rawKeys = req.query.shopKeys;
   if (!rawKeys) throw new Error("`shopKeys` is required");
   const shopKeys = String(rawKeys)
