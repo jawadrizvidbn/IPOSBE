@@ -1242,12 +1242,13 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
   // 1) Validate and parse input flags
 
   const user = await User.findByPk(req.user.id);
-  console.log(
-    "user",
-    user.dataValues?.reportPermissions,
-    user?.reportPermissions
+
+  const showTotalsOnly = Boolean(
+    JSON.parse(user?.reportPermissions || "{}")?.retailWholesaleByCategory
+      ?.totalsOnly
   );
 
+  console.log("showTotalsOnly", showTotalsOnly);
   const rawKeys = req.query.shopKeys;
   if (!rawKeys) throw new Error("`shopKeys` is required");
   const shopKeys = String(rawKeys)
