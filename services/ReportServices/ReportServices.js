@@ -1248,7 +1248,6 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
       ?.totalsOnly
   );
 
-  console.log("showTotalsOnly", showTotalsOnly);
   const rawKeys = req.query.shopKeys;
   if (!rawKeys) throw new Error("`shopKeys` is required");
   const shopKeys = String(rawKeys)
@@ -1466,23 +1465,25 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         });
         finalMap[key] = base;
       }
-      finalMap[key][`${shopKey} retail`] += Number(r.retail) || 0;
-      finalMap[key][`${shopKey} wholesale`] += Number(r.wholesale) || 0;
+      if (!showTotalsOnly)
+        finalMap[key][`${shopKey} retail`] += Number(r.retail) || 0;
+      if (!showTotalsOnly)
+        finalMap[key][`${shopKey} wholesale`] += Number(r.wholesale) || 0;
       finalMap[key][`${shopKey} totalQty`] += Number(r.totalQty) || 0;
       if (includeTotalCost)
         finalMap[key][`${shopKey} grandTotalCost`] += Number(r.totalCost) || 0;
       if (includeTotalSelling)
         finalMap[key][`${shopKey} grandTotalSelling`] +=
           Number(r.totalSelling) || 0;
-      if (includeRetailCost)
+      if (includeRetailCost && !showTotalsOnly)
         finalMap[key][`${shopKey} retailCost`] += Number(r.retailCost) || 0;
-      if (includeRetailSelling)
+      if (includeRetailSelling && !showTotalsOnly)
         finalMap[key][`${shopKey} retailSelling`] +=
           Number(r.retailSelling) || 0;
-      if (includeWholesaleCost)
+      if (includeWholesaleCost && !showTotalsOnly)
         finalMap[key][`${shopKey} wholesaleCost`] +=
           Number(r.wholesaleCost) || 0;
-      if (includeWholesaleSelling)
+      if (includeWholesaleSelling && !showTotalsOnly)
         finalMap[key][`${shopKey} wholesaleSelling`] +=
           Number(r.wholesaleSelling) || 0;
     });
@@ -1494,8 +1495,7 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
     let sum = 0;
     allShops.forEach((shop) => {
       sum +=
-        row[`${shop} retail`] +
-        row[`${shop} wholesale`] +
+        row[`${shop} totalQty`] +
         (includeTotalCost ? row[`${shop} grandTotalCost`] : 0) +
         (includeTotalSelling ? row[`${shop} grandTotalSelling`] : 0);
     });
