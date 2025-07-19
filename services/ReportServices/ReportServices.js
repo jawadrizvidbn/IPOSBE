@@ -1453,8 +1453,8 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         if (includeSub1) base["Sub1 Category"] = r.sub1No;
         if (includeSub2) base["Sub2 Category"] = r.sub2No;
         shopKeys.forEach((shop) => {
-          base[`${shop} retail`] = 0;
-          base[`${shop} wholesale`] = 0;
+          if (!showTotalsOnly) base[`${shop} retail`] = 0;
+          if (!showTotalsOnly) base[`${shop} wholesale`] = 0;
           base[`${shop} totalQty`] = 0;
           if (includeTotalCost) base[`${shop} grandTotalCost`] = 0;
           if (includeTotalSelling) base[`${shop} grandTotalSelling`] = 0;
