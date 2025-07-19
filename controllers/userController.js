@@ -187,6 +187,7 @@ exports.create = async (req, res) => {
       gracePeriod,
       referenceNumber,
       role: role || "user", // Default role if not provided
+      reportPermissions: JSON.stringify(reportPermissions),
     });
 
     // Respond with the new user and token
@@ -233,6 +234,7 @@ exports.login = async (req, res) => {
       planStartDate: user.planStartDate,
       planEndDate: user.planEndDate,
       referenceNumber: user?.referenceNumber || "",
+      reportPermissions: JSON.parse(user.reportPermissions),
     };
     // Check if the user is superadmin
     if (user.role === "superadmin") {
@@ -294,6 +296,7 @@ exports.getAllUsers = async (req, res) => {
         planEndDate: user.planEndDate,
         permissions: JSON.parse(user.permissions), // Use parsedPermissions or default to an empty object,
         referenceNumber: user.referenceNumber,
+        reportPermissions: JSON.parse(user.reportPermissions),
       };
     });
 
@@ -329,6 +332,7 @@ exports.getUserById = async (req, res) => {
       serverPort: user.serverPort,
       allowedStores: JSON.parse(user.allowedStores),
       referenceNumber: user.referenceNumber,
+      reportPermissions: JSON.parse(user.reportPermissions),
     });
   } catch (error) {
     console.error("Error fetching user by ID:", error);
@@ -359,6 +363,7 @@ exports.updateUser = async (req, res) => {
       serverPort,
       allowedStores,
       password,
+      reportPermissions,
     } = req.body;
 
     if (password) {
@@ -381,6 +386,7 @@ exports.updateUser = async (req, res) => {
     user.serverPassword = serverPassword;
     user.serverPort = serverPort;
     user.allowedStores = JSON.stringify(allowedStores);
+    user.reportPermissions = JSON.stringify(reportPermissions);
     await user.save();
     res.status(200).json({ message: "User updated successfully" });
   } catch (error) {
