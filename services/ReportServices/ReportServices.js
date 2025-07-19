@@ -13,6 +13,7 @@ const dateFns = require("date-fns");
 const { format, getYear, getMonth, addDays } = require("date-fns");
 const createSequelizeInstanceCustom = require("../../utils/sequelizeInstanceCustom");
 const { getYearAndMonthRange, sum } = require("../../utils/utils");
+const User = require("../../models/user.model");
 
 exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
   try {
@@ -1239,7 +1240,10 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
 
 exports.acrossWholesaleByCategoryReport = async (req) => {
   // 1) Validate and parse input flags
-  console.log("user", req.user);
+
+  const user = await User.findByPk(req.user.id);
+  console.log("user", user);
+
   const rawKeys = req.query.shopKeys;
   if (!rawKeys) throw new Error("`shopKeys` is required");
   const shopKeys = String(rawKeys)
