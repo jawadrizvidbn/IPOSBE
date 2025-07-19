@@ -1405,8 +1405,8 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
           const base = { majorNo: majDesc };
           if (includeSub1) base.sub1No = s1Desc;
           if (includeSub2) base.sub2No = s2Desc;
-          base.retail = 0;
-          base.wholesale = 0;
+          if (!showTotalsOnly) base.retail = 0;
+          if (!showTotalsOnly) base.wholesale = 0;
           base.totalQty = 0;
           if (includeTotalCost) base.totalCost = 0;
           if (includeTotalSelling) base.totalSelling = 0;
@@ -1422,13 +1422,17 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
         const sell = Number(r.totalSelling) || 0;
         pivot[key].totalQty += qty;
         if (r.saleType === "retail") {
-          pivot[key].retail += qty;
-          if (includeRetailCost) pivot[key].retailCost += cost;
-          if (includeRetailSelling) pivot[key].retailSelling += sell;
+          if (!showTotalsOnly) pivot[key].retail += qty;
+          if (includeRetailCost && !showTotalsOnly)
+            pivot[key].retailCost += cost;
+          if (includeRetailSelling && !showTotalsOnly)
+            pivot[key].retailSelling += sell;
         } else {
-          pivot[key].wholesale += qty;
-          if (includeWholesaleCost) pivot[key].wholesaleCost += cost;
-          if (includeWholesaleSelling) pivot[key].wholesaleSelling += sell;
+          if (!showTotalsOnly) pivot[key].wholesale += qty;
+          if (includeWholesaleCost && !showTotalsOnly)
+            pivot[key].wholesaleCost += cost;
+          if (includeWholesaleSelling && !showTotalsOnly)
+            pivot[key].wholesaleSelling += sell;
         }
         if (includeTotalCost) pivot[key].totalCost += cost;
         if (includeTotalSelling) pivot[key].totalSelling += sell;
@@ -1509,44 +1513,49 @@ exports.acrossWholesaleByCategoryReport = async (req) => {
   if (includeSub1) totalRow["Sub1 Category"] = "";
   if (includeSub2) totalRow["Sub2 Category"] = "";
   shopKeys.forEach((shop) => {
-    totalRow[`${shop} retail`] = data.reduce(
-      (a, r) => a + Number(r[`${shop} retail`]),
-      0
-    );
-    totalRow[`${shop} wholesale`] = data.reduce(
-      (a, r) => a + Number(r[`${shop} wholesale`]),
-      0
-    );
+    if (!showTotalsOnly) {
+      totalRow[`${shop} retail`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} retail`]),
+        0
+      );
+    }
+    if (!showTotalsOnly) {
+      totalRow[`${shop} wholesale`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} wholesale`]),
+        0
+      );
+    }
+
     totalRow[`${shop} totalQty`] = data.reduce(
       (a, r) => a + Number(r[`${shop} totalQty`]),
       0
     );
-    if (includeTotalCost)
+    if (includeTotalCost && !showTotalsOnly)
       totalRow[`${shop} grandTotalCost`] = data.reduce(
         (a, r) => a + Number(r[`${shop} grandTotalCost`]),
         0
       );
-    if (includeTotalSelling)
+    if (includeTotalSelling && !showTotalsOnly)
       totalRow[`${shop} grandTotalSelling`] = data.reduce(
         (a, r) => a + Number(r[`${shop} grandTotalSelling`]),
         0
       );
-    if (includeRetailCost)
+    if (includeRetailCost && !showTotalsOnly)
       totalRow[`${shop} retailCost`] = data.reduce(
         (a, r) => a + Number(r[`${shop} retailCost`]),
         0
       );
-    if (includeRetailSelling)
+    if (includeRetailSelling && !showTotalsOnly)
       totalRow[`${shop} retailSelling`] = data.reduce(
         (a, r) => a + Number(r[`${shop} retailSelling`]),
         0
       );
-    if (includeWholesaleCost)
+    if (includeWholesaleCost && !showTotalsOnly)
       totalRow[`${shop} wholesaleCost`] = data.reduce(
         (a, r) => a + Number(r[`${shop} wholesaleCost`]),
         0
       );
-    if (includeWholesaleSelling)
+    if (includeWholesaleSelling && !showTotalsOnly)
       totalRow[`${shop} wholesaleSelling`] = data.reduce(
         (a, r) => a + Number(r[`${shop} wholesaleSelling`]),
         0
