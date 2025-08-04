@@ -1060,19 +1060,31 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
 
   prodMap.forEach(({ stockcode, stockdescription, shops }) => {
     const row = { stockcode, stockdescription };
+    let rowRetailSum = 0;
+    let rowWholesaleSum = 0;
+
     shopKeys.forEach((shopKey) => {
       const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
       const m = shops[shopKey] || { retail: 0, wholesale: 0 };
       const retail = m.retail;
       const wholesale = m.wholesale;
       const total = retail + wholesale;
+
       row[`${k} Retail`] = retail;
       row[`${k} Wholesale`] = wholesale;
       row[`${k} Total`] = total;
 
+      rowRetailSum += retail;
+      rowWholesaleSum += wholesale;
+
       grandRetailTotal += retail;
       grandWholesaleTotal += wholesale;
     });
+
+    row["Retail Grand Total"] = rowRetailSum;
+    row["Wholesale Grand Total"] = rowWholesaleSum;
+    row["Grand Total"] = rowRetailSum + rowWholesaleSum;
+
     data.push(row);
   });
 
