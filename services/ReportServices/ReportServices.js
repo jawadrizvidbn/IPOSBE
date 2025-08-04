@@ -1054,7 +1054,7 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
   });
 
   const data = [];
-  // running grand totals
+  // running grand totals across all shops/products
   let grandRetailTotal = 0;
   let grandWholesaleTotal = 0;
 
@@ -1070,28 +1070,21 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
       row[`${k} Wholesale`] = wholesale;
       row[`${k} Total`] = total;
 
-      // accumulate for grand totals
       grandRetailTotal += retail;
       grandWholesaleTotal += wholesale;
     });
-    row["Retail + Wholesale"] = Object.entries(shops).reduce(
-      (sum, [, v]) =>
-        sum + (Number(v.retail) || 0) + (Number(v.wholesale) || 0),
-      0
-    );
     data.push(row);
   });
 
+  // 5) grand totals row
   const grandRow = {
     stockcode: null,
     stockdescription: "Grand Total",
   };
-
-  // per-shop aggregates in grand row
   let grandTotalAll = 0;
+
   shopKeys.forEach((shopKey) => {
     const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
-    // sum across all products for this shop
     const shopRetailSum = data.reduce(
       (sum, row) => sum + Number(row[`${k} Retail`] || 0),
       0
@@ -1107,19 +1100,17 @@ exports.acrossRetailWholesaleByProductReport = async (req) => {
     grandTotalAll += shopTotalSum;
   });
 
-  // overall grand totals
   grandRow["Retail Grand Total"] = grandRetailTotal;
   grandRow["Wholesale Grand Total"] = grandWholesaleTotal;
   grandRow["Grand Total"] = grandRetailTotal + grandWholesaleTotal;
 
   data.push(grandRow);
 
-  // 5) sortableKeys
+  // 6) sortableKeys
   const sortableKeys = shopKeys.flatMap((shopKey) => {
     const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
     return [`${k} Retail`, `${k} Wholesale`, `${k} Total`];
   });
-  // include summary labels
   sortableKeys.push(
     "Retail Grand Total",
     "Wholesale Grand Total",
