@@ -899,6 +899,32 @@ exports.acrossStoresProductsReport = async (req) => {
       result.push(row);
     });
 
+    // 6.1) add overall totals row (sum of all previous rows)
+    if (result.length) {
+      const totalsRow = { stockcode: null, stockdescription: "Grand Total" };
+      // determine numeric columns by inspecting first row (excluding identifiers)
+      const sample = result[0];
+      const numericCols = Object.keys(sample).filter(
+        (col) =>
+          col !== "stockcode" &&
+          col !== "stockdescription" &&
+          typeof sample[col] === "number"
+      );
+
+      // accumulate per column
+      numericCols.forEach((col) => {
+        totalsRow[col] = result.reduce((sum, r) => {
+          const v = Number(r[col]);
+          return sum + (isNaN(v) ? 0 : v);
+        }, 0);
+      });
+
+      // If some shop-specific fields are strings or come from storeFields (e.g., prefixed ones),
+      // you can optionally leave them out or set them to null/empty. Here we skip non-numeric ones.
+
+      result.push(totalsRow);
+    }
+
     // 7) Sortable keys
     const sortableKeys = [];
     shopKeys.forEach((shopKey) => {
