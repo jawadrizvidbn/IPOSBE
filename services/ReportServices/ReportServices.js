@@ -883,6 +883,9 @@ exports.acrossStoresProductsReport = async (req) => {
     const result = [];
     prodMap.forEach(({ stockcode, stockdescription, shops }) => {
       const row = { stockcode, stockdescription };
+      let qtySum = 0;
+      let totalCostSum = 0;
+      let totalSellingSum = 0;
       shopKeys.forEach((shopKey, idx) => {
         const m = shops[shopKey] || {
           quantity: 0,
@@ -895,7 +898,14 @@ exports.acrossStoresProductsReport = async (req) => {
 
         // merge that shop’s storeFields (same index in storeFieldsByShop)
         Object.assign(row, storeFieldsByShop[idx] || {});
+
+        qtySum += m.quantity;
+        totalCostSum += m.totalCost;
+        totalSellingSum += m.totalSelling;
       });
+      row["Grand Total Quantity"] = qtySum;
+      row["Grand Total Cost"] = totalCostSum;
+      row["Grand Total Selling"] = totalSellingSum;
       result.push(row);
     });
 
