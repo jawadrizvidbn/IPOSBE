@@ -7,7 +7,7 @@ const connectServerAndGetAllDatabases = async (req, res) => {
     const { host, user, password, port } = req.body;
     const connection = new Sequelize("", user, password, {
       host,
-      port: port || '3306',
+      port: port || "3306",
       dialect: "mysql",
     });
     const results = await connection.query("SHOW DATABASES", {
@@ -97,8 +97,14 @@ const getallshop = async (req, res) => {
     // Fetch all databases
     console.log("allowed stores: ", req.user?.allowedStores);
 
-    const { serverHost, serverUser, serverPassword, allowedStores, serverPort } = req.user;
-    
+    const {
+      serverHost,
+      serverUser,
+      serverPassword,
+      allowedStores,
+      serverPort,
+    } = req.user;
+
     const userInstance = new Sequelize("", serverUser, serverPassword, {
       host: serverHost,
       port: serverPort,
@@ -147,7 +153,6 @@ const getallshop = async (req, res) => {
 
     // Iterate over each group in groupedDatabases
     Object.keys(groupedDatabases).forEach((group) => {
-
       // Find permissions for the current group
       const allowedGroup = allowedStores.find((store) => store === group);
 
@@ -266,7 +271,8 @@ const findAllAndActiveDatabase = async (req, res) => {
   const baseName = req.params.baseName; // Ensure parameter name matches exactly
   console.log(req.user);
 
-  const { serverHost, serverUser, serverPassword, allowedStores, serverPort } = req.user;
+  const { serverHost, serverUser, serverPassword, allowedStores, serverPort } =
+    req.user;
 
   try {
     // Determine the group to activate databases based on user permissions or superadmin status
@@ -274,7 +280,7 @@ const findAllAndActiveDatabase = async (req, res) => {
     const userInstance = new Sequelize("", serverUser, serverPassword, {
       host: serverHost,
       dialect: "mysql",
-      port: serverPort
+      port: serverPort,
     });
     // Fetch all databases
     const results = await userInstance.query("SHOW DATABASES", {
@@ -352,7 +358,8 @@ const findAllAndActiveDatabase = async (req, res) => {
 };
 // Function to get active databases
 const getActiveDatabases = async (user, store) => {
-  const { serverHost, serverUser, serverPassword, allowedStores, serverPort } = user || {};
+  const { serverHost, serverUser, serverPassword, allowedStores, serverPort } =
+    user || {};
 
   console.log("store: ", store);
   if (!store && typeof store !== "string") {
@@ -361,7 +368,10 @@ const getActiveDatabases = async (user, store) => {
   const userInstance = new Sequelize("", serverUser, serverPassword, {
     host: serverHost,
     dialect: "mysql",
-    port: serverPort
+    port: serverPort,
+    dialectOptions: {
+      connectTimeout: 1000000,
+    },
   });
   const results = await userInstance.query("SHOW DATABASES", {
     type: QueryTypes.SELECT,
