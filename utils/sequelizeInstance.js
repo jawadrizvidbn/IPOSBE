@@ -9,6 +9,7 @@ const createSequelizeInstance = (databaseName) => {
     config.mysql.username,
     config.mysql.password,
     {
+      connectTimeout: 1000000,
       host: config.mysql.host,
       dialect: "mysql", // Explicitly specify the dialect
     }
