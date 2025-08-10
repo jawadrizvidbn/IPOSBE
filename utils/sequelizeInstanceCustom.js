@@ -19,9 +19,11 @@ const createSequelizeInstanceCustom = ({
       connectTimeout: 1000000,
     },
     pool: {
-      max: 100,
+      max: 1000,
       min: 0,
-      idle: 1000000,
+      idle: 10000,
+      evict: 10000,
+      acquire: 30000,
     },
   });
   console.log(sequelize.config.database, "active database");

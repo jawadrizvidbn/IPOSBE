@@ -16,6 +16,32 @@ const { getYearAndMonthRange, sum } = require("../../utils/utils");
 const User = require("../../models/user.model");
 const pLimit = require("p-limit");
 
+const _poolCache = new Map();
+function getPooledSequelizeForServer({ host, username, password, port }) {
+  const key = `${host}:${port}:${username}`;
+  if (_poolCache.has(key)) return _poolCache.get(key);
+
+  // Connect to a neutral DB (e.g. mysql/information_schema) to allow fully-qualified cross-DB queries.
+  const sequelize = new Sequelize("mysql", username, password, {
+    host,
+    port,
+    dialect: "mysql",
+    logging: false,
+    pool: {
+      max: 10,
+      min: 0,
+      acquire: 30_000,
+      idle: 10_000,
+    },
+    dialectOptions: {
+      multipleStatements: false,
+    },
+  });
+
+  _poolCache.set(key, sequelize);
+  return sequelize;
+}
+
 exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
   try {
     const { shopKey } = req.query;
@@ -1687,31 +1713,6 @@ exports.acrossDailySalesReport = async (req) => {
 // };
 
 // ---- Connection pool cache (one pool per host/user/port) ----
-const _poolCache = new Map();
-function getPooledSequelizeForServer({ host, username, password, port }) {
-  const key = `${host}:${port}:${username}`;
-  if (_poolCache.has(key)) return _poolCache.get(key);
-
-  // Connect to a neutral DB (e.g. mysql/information_schema) to allow fully-qualified cross-DB queries.
-  const sequelize = new Sequelize("mysql", username, password, {
-    host,
-    port,
-    dialect: "mysql",
-    logging: false,
-    pool: {
-      max: 10,
-      min: 0,
-      acquire: 30_000,
-      idle: 10_000,
-    },
-    dialectOptions: {
-      multipleStatements: false,
-    },
-  });
-
-  _poolCache.set(key, sequelize);
-  return sequelize;
-}
 
 exports.acrossInvoiceReport = async (req) => {
   const { serverHost, serverUser, serverPassword, serverPort } = req.user || {};
