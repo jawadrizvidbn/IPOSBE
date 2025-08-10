@@ -1713,7 +1713,6 @@ function getPooledSequelizeForServer({ host, username, password, port }) {
   return sequelize;
 }
 
-// ---- Main handler ----
 exports.acrossInvoiceReport = async (req) => {
   const { serverHost, serverUser, serverPassword, serverPort } = req.user || {};
 
@@ -1793,48 +1792,47 @@ exports.acrossInvoiceReport = async (req) => {
   }
 
   return { success: true, data: formattedData, errors };
+};
 
-  // ---- inner function ----
-  async function runShopReport({
-    serverDb,
-    shopKey,
-    expectedTables,
-    historyRange,
-  }) {
-    const active = await databaseController.getActiveDatabases(
-      req.user,
-      shopKey
-    );
+// ---- Per-shop query runner ----
+async function runShopReport({
+  req,
+  serverDb,
+  shopKey,
+  expectedTables,
+  historyRange,
+}) {
+  const active = await databaseController.getActiveDatabases(req.user, shopKey);
 
-    const historyDbName = Object.values(active)
-      .flat()
-      .find((db) => db.toLowerCase().includes("history"));
-    const stockmasterDbName = Object.values(active)
-      .flat()
-      .find((db) => db.toLowerCase().includes("master"));
+  const historyDbName = Object.values(active)
+    .flat()
+    .find((db) => db.toLowerCase().includes("history"));
+  const stockmasterDbName = Object.values(active)
+    .flat()
+    .find((db) => db.toLowerCase().includes("master"));
 
-    if (!historyDbName || !stockmasterDbName) {
-      return { shopKey, rows: [] };
-    }
+  if (!historyDbName || !stockmasterDbName) {
+    return { shopKey, rows: [] };
+  }
 
-    // Filter expected tables to those that exist
-    const exist = await serverDb.query(
-      `SELECT TABLE_NAME AS Name
+  // Filter expected tables to existing ones
+  const exist = await serverDb.query(
+    `SELECT TABLE_NAME AS Name
      FROM INFORMATION_SCHEMA.TABLES
      WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
-      {
-        replacements: { db: historyDbName, list: expectedTables },
-        type: QueryTypes.SELECT,
-      }
-    );
+    {
+      replacements: { db: historyDbName, list: expectedTables },
+      type: QueryTypes.SELECT,
+    }
+  );
 
-    const tables = exist.map((r) => r.Name);
-    if (!tables.length) return { shopKey, rows: [] };
+  const tables = exist.map((r) => r.Name);
+  if (!tables.length) return { shopKey, rows: [] };
 
-    // Build UNION ALL subquery over existing month tables (fully qualified)
-    const unionSql = tables
-      .map((tbl) =>
-        `
+  // Build UNION ALL
+  const unionSql = tables
+    .map((tbl) =>
+      `
         SELECT
           ${historyDbName}.${tbl}.datetime     AS DateTime,
           ${historyDbName}.${tbl}.salenum      AS InvoiceNo,
@@ -1845,13 +1843,10 @@ exports.acrossInvoiceReport = async (req) => {
         WHERE (:start IS NULL OR ${historyDbName}.${tbl}.datetime >= :start)
           AND (:end   IS NULL OR ${historyDbName}.${tbl}.datetime <= :end)
       `.trim()
-      )
-      .join("\nUNION ALL\n");
+    )
+    .join("\nUNION ALL\n");
 
-    // NOTE: No CTE to stay compatible with MySQL 5.7
-    // Join with split-tender table ON invoice number, and SUM per type.
-    // Group by all non-aggregates to avoid accidental collapsing on same datetime.
-    const finalSql = `
+  const finalSql = `
     SELECT
       u.DateTime,
       u.InvoiceNo,
@@ -1868,22 +1863,18 @@ exports.acrossInvoiceReport = async (req) => {
     GROUP BY
       u.DateTime, u.InvoiceNo, u.FinalizedAs, u.ClerkName, u.InvoiceTotal
     ORDER BY u.DateTime
-    LIMIT :limit OFFSET :offset
   `;
 
-    const rows = await serverDb.query(finalSql, {
-      replacements: {
-        start: historyRange.startDay,
-        end: historyRange.endDay,
-        limit: pageSize,
-        offset,
-      },
-      type: QueryTypes.SELECT,
-    });
+  const rows = await serverDb.query(finalSql, {
+    replacements: {
+      start: historyRange.startDay,
+      end: historyRange.endDay,
+    },
+    type: QueryTypes.SELECT,
+  });
 
-    return { shopKey, rows };
-  }
-};
+  return { shopKey, rows };
+}
 
 exports.allTblDataCancelTran = async (req) => {
   try {
