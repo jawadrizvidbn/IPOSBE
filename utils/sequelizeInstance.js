@@ -11,6 +11,14 @@ const createSequelizeInstance = (databaseName) => {
     {
       host: config.mysql.host,
       dialect: "mysql", // Explicitly specify the dialect
+      dialectOptions: {
+        connectTimeout: 1000000,
+      },
+      pool: {
+        max: 100,
+        min: 0,
+        idle: 1000000,
+      },
     }
   );
   console.log(sequelize.config.database, "active database");

@@ -7,13 +7,24 @@ const createSequelizeInstanceCustom = ({
   username,
   password,
   host,
-  port = "3306"
+  port = "3306",
 }) => {
   console.log({ databaseName, username, password, host });
   const sequelize = new Sequelize(databaseName, username, password, {
     host: host,
     dialect: "mysql", // Explicitly specify the dialect,
-    port
+    port: port,
+    logging: false,
+    dialectOptions: {
+      connectTimeout: 1000000,
+    },
+    pool: {
+      max: 1000,
+      min: 0,
+      idle: 10000,
+      evict: 10000,
+      acquire: 30000,
+    },
   });
   console.log(sequelize.config.database, "active database");
   return sequelize;

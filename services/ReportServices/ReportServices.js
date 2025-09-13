@@ -3,11 +3,44 @@ const {
   getDatabases,
   getDatabasesCustom,
 } = require("../../utils/databaseHelper"); // Adjust the path if necessary
-const { getDatabasesMultiple } = require("../../utils/databaseHelperMultiple"); // Adjust the path if necessary
+const {
+  getDatabasesMultiple,
+  getDatabasesMultipleCustom,
+} = require("../../utils/databaseHelperMultiple"); // Adjust the path if necessary
 const databaseController = require("../../controllers/databaseController");
-const { QueryTypes } = require("sequelize");
+const { QueryTypes, Sequelize } = require("sequelize");
 const dateFns = require("date-fns");
 const { format, getYear, getMonth, addDays } = require("date-fns");
+const createSequelizeInstanceCustom = require("../../utils/sequelizeInstanceCustom");
+const { getYearAndMonthRange, sum } = require("../../utils/utils");
+const User = require("../../models/user.model");
+const pLimit = require("p-limit");
+
+const _poolCache = new Map();
+function getPooledSequelizeForServer({ host, username, password, port }) {
+  const key = `${host}:${port}:${username}`;
+  if (_poolCache.has(key)) return _poolCache.get(key);
+
+  // Connect to a neutral DB (e.g. mysql/information_schema) to allow fully-qualified cross-DB queries.
+  const sequelize = new Sequelize("mysql", username, password, {
+    host,
+    port,
+    dialect: "mysql",
+    logging: false,
+    pool: {
+      max: 10,
+      min: 0,
+      acquire: 30_000,
+      idle: 10_000,
+    },
+    dialectOptions: {
+      multipleStatements: false,
+    },
+  });
+
+  _poolCache.set(key, sequelize);
+  return sequelize;
+}
 
 exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
   try {
@@ -52,6 +85,7 @@ exports.findSpeficlyStaticTblDataCurrentTran = async (req) => {
     throw new Error(error.message);
   }
 };
+
 exports.companydetailstblReg = async (req) => {
   try {
     const { serverHost, serverUser, serverPassword, serverPort } = req.user;
@@ -85,121 +119,1763 @@ exports.companydetailstblReg = async (req) => {
 
 exports.acrossReport = async (startDate, endDate, req) => {
   try {
-    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
-    const activeDatabases = await databaseController.getActiveDatabases(
-      req.user,
-      req.query.shopKey
+    const { serverHost, serverUser, serverPassword } = req.user;
+
+    // --- parse shopKeys ---
+    const shopKeysArray = (req.query.shopKeys || "")
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+
+    // --- get history + stockmaster DBs per shop ---
+    const dbGroups = await Promise.all(
+      shopKeysArray.map(async (shopKey) => {
+        const activeDbs = await databaseController.getActiveDatabases(
+          req.user,
+          shopKey
+        );
+        return getDatabasesMultipleCustom({
+          activeDatabasesMultiple: activeDbs,
+          serverHost,
+          serverUser,
+          serverPassword,
+        });
+      })
     );
 
-    // Get the history and stockmaster databases using the utility
-    const { historyDbs, stockmasterDbs } =
-      getDatabasesMultiple(activeDatabases);
+    // flatten history DBs for the qty queries
+    const historyDbs = dbGroups.flatMap((g) => g.historyDbs);
 
-    // Initialize an object to hold results with stock codes as keys
-    const allResults = {};
-    let grandTotalQty = 0; // Initialize a variable for the grand total
+    // --- 0) fetch tblstorefields from each shop’s stockmaster DB, handling missing table ---
+    const storeFieldsByShop = await Promise.all(
+      dbGroups.map(async (group) => {
+        const stockmasterDb = group.stockmasterDbs[0];
+        const dbName = stockmasterDb.config.database;
+        let row = {};
 
-    // Loop through each database
-    for (const historyDb of historyDbs) {
-      const dbName = historyDb.config.database; // Get the current database name
-      // Get all tables in the current database
-      const tables = await historyDb.query("SHOW TABLES", {
-        type: historyDb.QueryTypes.SELECT,
-      });
-
-      // Collect all tables matching the pattern YYYYMMtbldata_current_tran
-      const matchingTables = [];
-
-      tables.forEach((table) => {
-        const tableName = Object.values(table)[0]; // Extract table name
-        const match = tableName.match(/^(\d{6})tbldata_current_tran$/);
-        if (match) {
-          matchingTables.push(tableName); // Collect matching table names
-        }
-      });
-
-      // Query each matching table
-      for (const table of matchingTables) {
-        // Modify the SQL query to include date filtering if dates are provided
-        let sqlQuery = `SELECT stockcode, stockdescription, qty FROM ${table}`;
-
-        if (startDate && endDate) {
-          // Validate date format
-          if (new Date(startDate) > new Date(endDate)) {
-            throw new Error("Start date cannot be greater than end date");
-          }
-
-          sqlQuery += ` WHERE datetime BETWEEN :startDate AND :endDate`;
-        }
-
-        const results = await historyDb.query(sqlQuery, {
-          type: historyDb.QueryTypes.SELECT,
-          timeout: 90000,
-          replacements: { startDate, endDate },
-        });
-        // Aggregate results
-        for (const { stockcode, stockdescription, qty } of results) {
-          if (!allResults[stockcode]) {
-            allResults[stockcode] = {
-              stockcode,
-              stockdescription,
-              qtyByDb: { [dbName]: qty }, // Initialize with current database's quantity
-              totalQty: qty, // Initialize total quantity
-            };
+        try {
+          const rows = await stockmasterDb.query(
+            `SELECT * FROM tblstorefields`,
+            { type: stockmasterDb.QueryTypes.SELECT }
+          );
+          row = rows[0] || {};
+        } catch (err) {
+          const noTable =
+            err.original &&
+            (err.original.code === "ER_NO_SUCH_TABLE" ||
+              err.original.errno === 1146);
+          if (noTable) {
+            console.warn(
+              `tblstorefields missing in ${dbName}, skipping store‐fields.`
+            );
           } else {
-            allResults[stockcode].qtyByDb[dbName] =
-              (allResults[stockcode].qtyByDb[dbName] || 0) + qty; // Sum quantities for this database
-            allResults[stockcode].totalQty += qty; // Sum total quantities
+            throw err;
           }
-          grandTotalQty += qty; // Add to the grand total
         }
-      }
-    }
 
-    // Check if any data was found
-    if (Object.keys(allResults).length === 0) {
-      throw new Error("No data found");
-    }
+        return Object.entries(row).reduce((acc, [col, val]) => {
+          const baseDb = dbName.replace(/_?master$/i, "");
+          const safeDb = baseDb.replace(/[^a-zA-Z0-9_]/g, "_");
+          acc[`${safeDb}_${col}`] = val;
+          return acc;
+        }, {});
+      })
+    );
 
-    // Prepare final results
-    const finalResults = Object.keys(allResults).map((stockcode) => {
-      const { stockdescription, qtyByDb, totalQty } = allResults[stockcode];
+    // --- 1) find all the matching history tables ---
+    const tableInfoArray = await Promise.all(
+      historyDbs.map(async (historyDb) => {
+        const dbName = historyDb.config.database;
+        const tables = await historyDb.query("SHOW TABLES", {
+          type: historyDb.QueryTypes.SELECT,
+        });
+        const matching = tables
+          .map((t) => Object.values(t)[0])
+          .filter((name) => /^\d{6}tbldata_current_tran$/.test(name));
+        return { historyDb, dbName, matchingTables: matching };
+      })
+    );
+
+    // --- 2) pull stockcode/description/qty from each table in parallel ---
+    const queryPromises = tableInfoArray.flatMap(
+      ({ historyDb, dbName, matchingTables }) =>
+        matchingTables.map((table) => {
+          let sql = `SELECT stockcode, stockdescription, qty FROM ${table}`;
+          if (startDate && endDate) {
+            if (new Date(startDate) > new Date(endDate)) {
+              throw new Error("Start date cannot be greater than end date");
+            }
+            sql += ` WHERE datetime BETWEEN :startDate AND :endDate`;
+          }
+          return historyDb
+            .query(sql, {
+              type: historyDb.QueryTypes.SELECT,
+              timeout: 90000,
+              replacements: { startDate, endDate },
+            })
+            .then((res) => ({ dbName, rows: res }));
+        })
+    );
+    const tableResults = await Promise.all(queryPromises);
+
+    // --- 3) aggregate by stockcode ---
+    const all = {};
+    let grandTotal = 0;
+    tableResults.forEach(({ dbName, rows }) =>
+      rows.forEach(({ stockcode, stockdescription, qty }) => {
+        if (!all[stockcode]) {
+          all[stockcode] = {
+            stockcode,
+            stockdescription,
+            qtyByDb: { [dbName]: qty },
+            totalQty: qty,
+          };
+        } else {
+          all[stockcode].qtyByDb[dbName] =
+            (all[stockcode].qtyByDb[dbName] || 0) + qty;
+          all[stockcode].totalQty += qty;
+        }
+        grandTotal += qty;
+      })
+    );
+    if (!Object.keys(all).length) throw new Error("No data found");
+
+    // --- 4) build finalResults, merging in the store-fields per shop ---
+    const dbNames = [...new Set(historyDbs.map((db) => db.config.database))];
+    const finalResults = Object.values(all).map((item) => {
+      // ensure each db column exists:
+      dbNames.forEach((dbName) => {
+        if (!(dbName in item.qtyByDb)) item.qtyByDb[dbName] = 0;
+      });
+
+      // round and spread qtyByDb
+      const roundedQtys = Object.fromEntries(
+        Object.entries(item.qtyByDb).map(([k, v]) => [
+          k,
+          parseFloat(v.toFixed(2)),
+        ])
+      );
+
       return {
-        stockcode,
-        stockdescription,
-        ...qtyByDb, // Spread quantities by database
-        totalQty: parseFloat(totalQty.toFixed(2)), // Add total quantity for this stock code
+        stockcode: item.stockcode,
+        stockdescription: item.stockdescription,
+        ...roundedQtys,
+        // merge every shop’s tblstorefields row (prefixed keys)
+        ...storeFieldsByShop.reduce((acc, shopFields) => {
+          Object.assign(acc, shopFields);
+          return acc;
+        }, {}),
+        totalQty: parseFloat(item.totalQty.toFixed(2)),
       };
     });
 
-    // Add missing stock codes with zero quantities for each database
-    for (const dbName of historyDbs.map((db) => db.config.database)) {
-      finalResults.forEach((item) => {
-        if (!(dbName in item)) {
-          item[dbName] = 0; // Assign 0 if the stock code is missing in the database
-        }
-      });
-    }
+    // sortableKeys: totalQty + each db
+    const sortableKeys = ["totalQty", ...dbNames];
 
-    // Round total quantities for each database
-    finalResults.forEach((item) => {
-      Object.keys(item).forEach((key) => {
-        if (typeof item[key] === "number") {
-          item[key] = parseFloat(item[key].toFixed(2)); // Round to 2 decimal places
-        }
-      });
-    });
-
-    grandTotalQty = parseFloat(grandTotalQty.toFixed(2)); // Round grandTotalQty to 2 decimal places
-
-    return {
-      finalResults, // This will now include results grouped by stock codes with quantities per database
-      grandTotalQty, // Include the grand total in the return value
-    };
-  } catch (error) {
-    throw new Error(error.message);
+    grandTotal = parseFloat(grandTotal.toFixed(2));
+    return { finalResults, grandTotalQty: grandTotal, sortableKeys };
+  } catch (err) {
+    throw new Error(err.message);
   }
 };
+
+exports.acrossStoresProductsReport = async (req) => {
+  try {
+    const startDate = req.query?.startDate;
+    const endDate = req.query?.endDate;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+
+    // 1) Parse shopKeys
+    const shopKeys = (req.query.shopKeys || "")
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+
+    const yearStart = startDate ? `${startDate} 00:00:00` : null;
+    const yearEnd = endDate ? `${endDate} 23:59:59` : null;
+    const { year, months } = getYearAndMonthRange(startDate, endDate);
+    const expectedTables = months.map(
+      (month) => `${year}${month}tbldata_current_tran`
+    );
+    console.log({ expectedTables });
+
+    // 3) Fetch tblstorefields for each shopKey, prefixing by DB name (sans “_master”)
+    const storeFieldsByShop = await Promise.all(
+      shopKeys.map(async (shopKey) => {
+        // find all active DBs for this shopKey
+        const active = await databaseController.getActiveDatabases(
+          req.user,
+          shopKey
+        );
+        // pick the first stockmaster DB
+        const stockmasterName = Object.values(active)
+          .flat()
+          .find((db) => db.toLowerCase().includes("master"));
+        if (!stockmasterName) {
+          return {}; // no stockmaster → no fields
+        }
+
+        const stockmasterDb = createSequelizeInstanceCustom({
+          databaseName: stockmasterName,
+          host: serverHost,
+          username: serverUser,
+          password: serverPassword,
+          port: serverPort,
+        });
+
+        // determine a safe prefix: strip “_master” and non-alphanumerics
+        const raw = stockmasterDb.config.database;
+        const base = raw.replace(/_?master$/i, "");
+        const prefix = base.replace(/[^a-zA-Z0-9_]/g, "_");
+
+        let row = {};
+        try {
+          const rows = await stockmasterDb.query(
+            `SELECT * FROM tblstorefields`,
+            { type: stockmasterDb.QueryTypes.SELECT }
+          );
+          row = rows[0] || {};
+        } catch (err) {
+          const noTable =
+            err.original &&
+            (err.original.code === "ER_NO_SUCH_TABLE" ||
+              err.original.errno === 1146);
+          if (noTable) {
+            console.warn(`tblstorefields missing in ${raw}, skipping.`);
+          } else {
+            throw err;
+          }
+        }
+
+        // prefix each column
+        return Object.entries(row).reduce((acc, [col, val]) => {
+          acc[`${prefix}_${col}`] = val;
+          return acc;
+        }, {});
+      })
+    );
+
+    // 4) Per-shop product aggregations
+    const perShopResults = await Promise.all(
+      shopKeys.map(async (shopKey) => {
+        // find the history DB name
+        const active = await databaseController.getActiveDatabases(
+          req.user,
+          shopKey
+        );
+        const historyName = Object.values(active)
+          .flat()
+          .find((db) => db.toLowerCase().includes("history"));
+        if (!historyName) return { shopKey, data: [] };
+
+        const historyDb = createSequelizeInstanceCustom({
+          databaseName: historyName,
+          host: serverHost,
+          username: serverUser,
+          password: serverPassword,
+          port: serverPort,
+        });
+
+        // see which monthly tables exist
+        const existing = await historyDb.query(
+          `
+            SELECT TABLE_NAME AS Name
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = :db
+              AND TABLE_NAME IN (:tbls)
+          `,
+          {
+            replacements: { db: historyName, tbls: expectedTables },
+            type: historyDb.QueryTypes.SELECT,
+          }
+        );
+        const tablesInYear = existing.map((r) => r.Name);
+        if (!tablesInYear.length) return { shopKey, data: [] };
+
+        // build & run UNION-ALL per month
+        const unionSql = tablesInYear
+          .map((tbl) =>
+            `
+          SELECT
+            stockcode,
+            stockdescription,
+            SUM(qty)                     AS quantity,
+            SUM(averagecostprice * qty) AS totalCost,
+            SUM(linetotal)              AS totalSelling
+          FROM \`${tbl}\`
+          WHERE datetime BETWEEN :start AND :end
+          GROUP BY stockcode, stockdescription
+        `.trim()
+          )
+          .join("\nUNION ALL\n");
+
+        const finalSql = `
+          SELECT
+            stockcode,
+            stockdescription,
+            SUM(quantity)     AS quantity,
+            SUM(totalCost)    AS totalCost,
+            SUM(totalSelling) AS totalSelling
+          FROM (
+            ${unionSql}
+          ) AS monthly_union
+          GROUP BY stockcode, stockdescription;
+        `;
+
+        const rows = await historyDb.query(finalSql, {
+          replacements: { start: yearStart, end: yearEnd },
+          type: historyDb.QueryTypes.SELECT,
+        });
+        return { shopKey, data: rows };
+      })
+    );
+
+    // 5) Pivot products across shops
+    const prodMap = new Map();
+    perShopResults.forEach(({ shopKey, data }) =>
+      data.forEach(
+        ({
+          stockcode,
+          stockdescription,
+          quantity,
+          totalCost,
+          totalSelling,
+        }) => {
+          const key = `${stockcode}|||${stockdescription}`;
+          if (!prodMap.has(key)) {
+            prodMap.set(key, { stockcode, stockdescription, shops: {} });
+          }
+          const rec = prodMap.get(key);
+          const qty = Number(quantity) || 0,
+            tc = Number(totalCost) || 0,
+            ts = Number(totalSelling) || 0;
+          rec.shops[shopKey] = {
+            quantity: qty,
+            totalCost: tc,
+            totalSelling: ts,
+          };
+        }
+      )
+    );
+
+    // 6) Build final array, merging in store-fields by index
+    const result = [];
+    prodMap.forEach(({ stockcode, stockdescription, shops }) => {
+      const row = { stockcode, stockdescription };
+      let qtySum = 0;
+      let totalCostSum = 0;
+      let totalSellingSum = 0;
+      shopKeys.forEach((shopKey, idx) => {
+        const m = shops[shopKey] || {
+          quantity: 0,
+          totalCost: 0,
+          totalSelling: 0,
+        };
+        row[`${shopKey} Quantity`] = m.quantity;
+        row[`${shopKey} Total Cost`] = m.totalCost;
+        row[`${shopKey} Total Selling`] = m.totalSelling;
+
+        // merge that shop’s storeFields (same index in storeFieldsByShop)
+        Object.assign(row, storeFieldsByShop[idx] || {});
+
+        qtySum += m.quantity;
+        totalCostSum += m.totalCost;
+        totalSellingSum += m.totalSelling;
+      });
+      row["Grand Total Quantity"] = qtySum;
+      row["Grand Total Cost"] = totalCostSum;
+      row["Grand Total Selling"] = totalSellingSum;
+      result.push(row);
+    });
+
+    // 6.1) add overall totals row (sum of all previous rows)
+    if (result.length) {
+      const totalsRow = { stockcode: null, stockdescription: "Grand Total" };
+      // determine numeric columns by inspecting first row (excluding identifiers)
+      const sample = result[0];
+      const numericCols = Object.keys(sample).filter(
+        (col) =>
+          col !== "stockcode" &&
+          col !== "stockdescription" &&
+          typeof sample[col] === "number"
+      );
+
+      // accumulate per column
+      numericCols.forEach((col) => {
+        totalsRow[col] = result.reduce((sum, r) => {
+          const v = Number(r[col]);
+          return sum + (isNaN(v) ? 0 : v);
+        }, 0);
+      });
+
+      // If some shop-specific fields are strings or come from storeFields (e.g., prefixed ones),
+      // you can optionally leave them out or set them to null/empty. Here we skip non-numeric ones.
+
+      result.push(totalsRow);
+    }
+
+    // 7) Sortable keys
+    const sortableKeys = [];
+    shopKeys.forEach((shopKey) => {
+      sortableKeys.push(
+        `${shopKey} Quantity`,
+        `${shopKey} Total Cost`,
+        `${shopKey} Total Selling`
+      );
+    });
+
+    return { data: result, sortableKeys };
+  } catch (err) {
+    throw err;
+  }
+};
+
+exports.acrossRetailWholesaleByProductReport = async (req) => {
+  // 1) parse + validate shopKeys, year, and isDetailed
+  const rawKeys = req.query.shopKeys;
+  if (!rawKeys) {
+    throw new Error("`shopKeys` is required");
+  }
+  const shopKeys = String(rawKeys)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!shopKeys.length) {
+    throw new Error("At least one shopKey must be provided");
+  }
+
+  // new: detailed flag
+  const isDetailed = Boolean(req.query.isDetailed);
+
+  // 2) common setup
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+  const startDate = req.query.startDate;
+  const endDate = req.query.endDate;
+
+  const startDay = startDate ? `${startDate} 00:00:00` : null;
+  const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+  const { year, months } = getYearAndMonthRange(startDate, endDate);
+  const expectedTables = months.map(
+    (month) => `${year}${month}tbldata_current_tran`
+  );
+
+  // 3) fetch each shop's per-product retail & wholesale totals
+  const perShopData = await Promise.all(
+    shopKeys.map(async (shopKey) => {
+      // find its history DB
+      const active = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+      let historyDbName;
+      outer: for (const grp of Object.values(active)) {
+        for (const dbName of grp) {
+          if (dbName.includes("history")) {
+            historyDbName = dbName;
+            break outer;
+          }
+        }
+      }
+      if (!historyDbName) return { shopKey, rows: [] };
+
+      // connect
+      const db = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      // discover tables that actually exist
+      const exist = await db.query(
+        `SELECT TABLE_NAME AS Name
+         FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = :db
+           AND TABLE_NAME IN (:list)`,
+        {
+          replacements: { db: historyDbName, list: expectedTables },
+          type: QueryTypes.SELECT,
+        }
+      );
+      const tables = exist.map((r) => r.Name);
+      if (!tables.length) return { shopKey, rows: [] };
+
+      // choose how we count quantity:
+      // - detailed: use Cardnum (or fallback to qty)
+      // - summary: count 1 per record
+      const saleQtyExpr = isDetailed
+        ? `CASE WHEN TRIM(Cardnum) <> '' THEN CAST(Cardnum AS DECIMAL(12,2)) ELSE qty END`
+        : `1`;
+
+      // build UNION ALL subqueries
+      const subq = tables
+        .map((tbl) =>
+          `
+          SELECT
+            stockcode,
+            stockdescription,
+            ${saleQtyExpr} AS saleQty,
+            CASE
+              WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail'
+              ELSE 'wholesale'
+            END AS saleType
+          FROM \`${tbl}\`
+          WHERE datetime BETWEEN :start AND :end
+        `.trim()
+        )
+        .join("\nUNION ALL\n");
+
+      // wrap & aggregate into two columns: retail & wholesale
+      const sql = `
+        SELECT
+          stockcode,
+          stockdescription,
+          SUM(CASE WHEN saleType = 'retail' THEN saleQty ELSE 0 END)     AS retail,
+          SUM(CASE WHEN saleType = 'wholesale' THEN saleQty ELSE 0 END)  AS wholesale
+        FROM (
+          ${subq}
+        ) AS all_sales
+        GROUP BY stockcode, stockdescription
+      `;
+
+      const rows = await db.query(sql, {
+        replacements: { start: startDay, end: endDay },
+        type: QueryTypes.SELECT,
+      });
+
+      return { shopKey, rows };
+    })
+  );
+
+  // 4) pivot into final data rows with per-shop totals
+  const prodMap = new Map();
+  perShopData.forEach(({ shopKey, rows }) => {
+    rows.forEach(({ stockcode, stockdescription, retail, wholesale }) => {
+      const key = `${stockcode}|||${stockdescription}`;
+      if (!prodMap.has(key)) {
+        prodMap.set(key, {
+          stockcode,
+          stockdescription,
+          shops: {},
+        });
+      }
+      prodMap.get(key).shops[shopKey] = {
+        retail: Number(retail) || 0,
+        wholesale: Number(wholesale) || 0,
+      };
+    });
+  });
+
+  const data = [];
+  // running grand totals across all shops/products
+  let grandRetailTotal = 0;
+  let grandWholesaleTotal = 0;
+
+  prodMap.forEach(({ stockcode, stockdescription, shops }) => {
+    const row = { stockcode, stockdescription };
+    let rowRetailSum = 0;
+    let rowWholesaleSum = 0;
+
+    shopKeys.forEach((shopKey) => {
+      const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+      const m = shops[shopKey] || { retail: 0, wholesale: 0 };
+      const retail = m.retail;
+      const wholesale = m.wholesale;
+      const total = retail + wholesale;
+
+      row[`${k} Retail`] = retail;
+      row[`${k} Wholesale`] = wholesale;
+      row[`${k} Total`] = total;
+
+      rowRetailSum += retail;
+      rowWholesaleSum += wholesale;
+
+      grandRetailTotal += retail;
+      grandWholesaleTotal += wholesale;
+    });
+
+    row["Retail Grand Total"] = rowRetailSum;
+    row["Wholesale Grand Total"] = rowWholesaleSum;
+    row["Grand Total"] = rowRetailSum + rowWholesaleSum;
+
+    data.push(row);
+  });
+
+  // 5) grand totals row
+  const grandRow = {
+    stockcode: null,
+    stockdescription: "Grand Total",
+  };
+  let grandTotalAll = 0;
+
+  shopKeys.forEach((shopKey) => {
+    const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+    const shopRetailSum = data.reduce(
+      (sum, row) => sum + Number(row[`${k} Retail`] || 0),
+      0
+    );
+    const shopWholesaleSum = data.reduce(
+      (sum, row) => sum + Number(row[`${k} Wholesale`] || 0),
+      0
+    );
+    const shopTotalSum = shopRetailSum + shopWholesaleSum;
+    grandRow[`${k} Retail`] = shopRetailSum;
+    grandRow[`${k} Wholesale`] = shopWholesaleSum;
+    grandRow[`${k} Total`] = shopTotalSum;
+    grandTotalAll += shopTotalSum;
+  });
+
+  grandRow["Retail Grand Total"] = grandRetailTotal;
+  grandRow["Wholesale Grand Total"] = grandWholesaleTotal;
+  grandRow["Grand Total"] = grandRetailTotal + grandWholesaleTotal;
+
+  data.push(grandRow);
+
+  // 6) sortableKeys
+  const sortableKeys = shopKeys.flatMap((shopKey) => {
+    const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+    return [`${k} Retail`, `${k} Wholesale`, `${k} Total`];
+  });
+  sortableKeys.push(
+    "Retail Grand Total",
+    "Wholesale Grand Total",
+    "Grand Total"
+  );
+
+  return { success: true, sortableKeys, data };
+};
+
+exports.acrossWholesaleByCategoryReport = async (req) => {
+  // 1) Validate and parse input flags
+
+  const user = await User.findByPk(req.user.id);
+
+  const showTotalsOnly = Boolean(
+    JSON.parse(user?.reportPermissions || "{}")?.retailWholesaleByCategory
+      ?.totalsOnly
+  );
+
+  const rawKeys = req.query.shopKeys;
+  if (!rawKeys) throw new Error("`shopKeys` is required");
+  const shopKeys = String(rawKeys)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!shopKeys.length)
+    throw new Error("At least one shopKey must be provided");
+
+  const includeSub1 = req.query.sub1 === "true";
+  const includeSub2 = req.query.sub2 === "true";
+  const includeTotalCost = req.query.totalCost === "true";
+  const includeTotalSelling = req.query.totalSelling === "true";
+  const includeRetailCost = req.query.retailCost === "true";
+  const includeRetailSelling = req.query.retailSelling === "true";
+  const includeWholesaleCost = req.query.wholesaleCost === "true";
+  const includeWholesaleSelling = req.query.wholesaleSelling === "true";
+
+  // 2) Connection params & date range
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+  const startDate = req.query.startDate;
+  const endDate = req.query.endDate;
+  const startDay = startDate ? `${startDate} 00:00:00` : null;
+  const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+  // 3) Determine which month‐tables exist
+  const { year, months } = getYearAndMonthRange(startDate, endDate);
+  const expectedTables = months.map((m) => `${year}${m}tbldata_current_tran`);
+
+  // 4) Fetch & pivot per shop
+  const rawData = await Promise.all(
+    shopKeys.map(async (shopKey) => {
+      // DB names
+      const active = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+      const historyDbName = Object.values(active)
+        .flat()
+        .find((db) => db.toLowerCase().includes("history"));
+      const stockmasterDbName = Object.values(active)
+        .flat()
+        .find((db) => db.toLowerCase().includes("master"));
+      if (!historyDbName || !stockmasterDbName) return { shopKey, rows: [] };
+
+      const db = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+      const stockMasterDb = createSequelizeInstanceCustom({
+        databaseName: stockmasterDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      // existing tables
+      const exist = await db.query(
+        `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
+        {
+          replacements: { db: historyDbName, list: expectedTables },
+          type: QueryTypes.SELECT,
+        }
+      );
+      const tables = exist.map((r) => r.Name);
+      if (!tables.length) return { shopKey, rows: [] };
+
+      // masters
+      const [masterMajorRows, masterSub1Rows, masterSub2Rows] =
+        await Promise.all([
+          stockMasterDb.query(
+            `SELECT MajorNo, MajorDescription FROM tblcategory`,
+            { type: QueryTypes.SELECT }
+          ),
+          includeSub1
+            ? stockMasterDb.query(
+                `SELECT MajorNo, Sub1No, Sub1Description FROM tblcategory_sub1`,
+                { type: QueryTypes.SELECT }
+              )
+            : Promise.resolve([]),
+          includeSub2
+            ? stockMasterDb.query(
+                `SELECT MajorNo, Sub1No, Sub2No, Sub2Description FROM tblcategory_sub2`,
+                { type: QueryTypes.SELECT }
+              )
+            : Promise.resolve([]),
+        ]);
+
+      // build subqueries
+      const subqs = tables
+        .map((tbl) => {
+          const fields = [
+            "majorNo",
+            includeSub1 ? "sub1No" : null,
+            includeSub2 ? "sub2No" : null,
+            `1 AS saleQty`,
+            `averagecostprice * qty AS totalCost`,
+            `linetotal        AS totalSelling`,
+            `CASE WHEN CehqueNum IN ('Combo','ComboGroup','') THEN 'retail' ELSE 'wholesale' END AS saleType`,
+          ]
+            .filter(Boolean)
+            .join(",\n    ");
+          return `SELECT\n    ${fields}\n  FROM \`${tbl}\`\n  WHERE datetime BETWEEN :start AND :end`;
+        })
+        .join("\nUNION ALL\n");
+
+      const groupCols = ["majorNo"]
+        .concat(includeSub1 ? ["sub1No"] : [])
+        .concat(includeSub2 ? ["sub2No"] : [])
+        .concat(["saleType"])
+        .join(", ");
+
+      const finalSql = `SELECT 
+      ${groupCols}, 
+      SUM(saleQty) AS totalQty, 
+      SUM(totalCost) AS totalCost, 
+      SUM(totalSelling) AS totalSelling 
+      FROM ( ${subqs} ) 
+      AS 
+      all_sales GROUP BY ${groupCols}`;
+
+      const flatRows = await db.query(finalSql, {
+        replacements: { start: startDay, end: endDay },
+        type: QueryTypes.SELECT,
+      });
+
+      // pivot per shop
+      const pivot = {};
+      for (const r of flatRows) {
+        const key = [r.majorNo]
+          .concat(includeSub1 ? [r.sub1No] : [])
+          .concat(includeSub2 ? [r.sub2No] : [])
+          .join("|");
+        if (!pivot[key]) {
+          const majDesc =
+            masterMajorRows.find((m) => m.MajorNo === r.majorNo)
+              ?.MajorDescription || r.majorNo;
+          const s1Desc = includeSub1
+            ? masterSub1Rows.find(
+                (s) => s.MajorNo === r.majorNo && s.Sub1No === r.sub1No
+              )?.Sub1Description || r.sub1No
+            : null;
+          const s2Desc = includeSub2
+            ? masterSub2Rows.find(
+                (s) =>
+                  s.MajorNo === r.majorNo &&
+                  s.Sub1No === r.sub1No &&
+                  s.Sub2No === r.sub2No
+              )?.Sub2Description || r.sub2No
+            : null;
+          const base = { majorNo: majDesc };
+          if (includeSub1) base.sub1No = s1Desc;
+          if (includeSub2) base.sub2No = s2Desc;
+          if (!showTotalsOnly) base.retail = 0;
+          if (!showTotalsOnly) base.wholesale = 0;
+          base.totalQty = 0;
+          if (includeTotalCost) base.totalCost = 0;
+          if (includeTotalSelling) base.totalSelling = 0;
+          if (includeRetailCost) base.retailCost = 0;
+          if (includeRetailSelling) base.retailSelling = 0;
+          if (includeWholesaleCost) base.wholesaleCost = 0;
+          if (includeWholesaleSelling) base.wholesaleSelling = 0;
+          pivot[key] = base;
+        }
+        // accumulate with numeric parsing
+        const qty = Number(r.totalQty) || 0;
+        const cost = Number(r.totalCost) || 0;
+        const sell = Number(r.totalSelling) || 0;
+        pivot[key].totalQty += qty;
+        if (r.saleType === "retail") {
+          if (!showTotalsOnly) pivot[key].retail += qty;
+          if (includeRetailCost && !showTotalsOnly)
+            pivot[key].retailCost += cost;
+          if (includeRetailSelling && !showTotalsOnly)
+            pivot[key].retailSelling += sell;
+        } else {
+          if (!showTotalsOnly) pivot[key].wholesale += qty;
+          if (includeWholesaleCost && !showTotalsOnly)
+            pivot[key].wholesaleCost += cost;
+          if (includeWholesaleSelling && !showTotalsOnly)
+            pivot[key].wholesaleSelling += sell;
+        }
+        if (includeTotalCost) pivot[key].totalCost += cost;
+        if (includeTotalSelling) pivot[key].totalSelling += sell;
+      }
+
+      return { shopKey, rows: Object.values(pivot) };
+    })
+  );
+
+  const allShops = shopKeys;
+
+  // final pivot across shops
+  const finalMap = {};
+  rawData.forEach(({ shopKey, rows }) => {
+    rows.forEach((r) => {
+      const key = [r.majorNo]
+        .concat(includeSub1 ? [r.sub1No] : [])
+        .concat(includeSub2 ? [r.sub2No] : [])
+        .join("|");
+      if (!finalMap[key]) {
+        const base = { "Major Category": r.majorNo };
+        if (includeSub1) base["Sub1 Category"] = r.sub1No;
+        if (includeSub2) base["Sub2 Category"] = r.sub2No;
+        shopKeys.forEach((shop) => {
+          if (!showTotalsOnly) base[`${shop} retail`] = 0;
+          if (!showTotalsOnly) base[`${shop} wholesale`] = 0;
+          base[`${shop} totalQty`] = 0;
+          if (includeTotalCost) base[`${shop} grandTotalCost`] = 0;
+          if (includeTotalSelling) base[`${shop} grandTotalSelling`] = 0;
+          if (includeRetailCost) base[`${shop} retailCost`] = 0;
+          if (includeRetailSelling) base[`${shop} retailSelling`] = 0;
+          if (includeWholesaleCost) base[`${shop} wholesaleCost`] = 0;
+          if (includeWholesaleSelling) base[`${shop} wholesaleSelling`] = 0;
+        });
+        finalMap[key] = base;
+      }
+      if (!showTotalsOnly)
+        finalMap[key][`${shopKey} retail`] += Number(r.retail) || 0;
+      if (!showTotalsOnly)
+        finalMap[key][`${shopKey} wholesale`] += Number(r.wholesale) || 0;
+      finalMap[key][`${shopKey} totalQty`] += Number(r.totalQty) || 0;
+      if (includeTotalCost)
+        finalMap[key][`${shopKey} grandTotalCost`] += Number(r.totalCost) || 0;
+      if (includeTotalSelling)
+        finalMap[key][`${shopKey} grandTotalSelling`] +=
+          Number(r.totalSelling) || 0;
+      if (includeRetailCost && !showTotalsOnly)
+        finalMap[key][`${shopKey} retailCost`] += Number(r.retailCost) || 0;
+      if (includeRetailSelling && !showTotalsOnly)
+        finalMap[key][`${shopKey} retailSelling`] +=
+          Number(r.retailSelling) || 0;
+      if (includeWholesaleCost && !showTotalsOnly)
+        finalMap[key][`${shopKey} wholesaleCost`] +=
+          Number(r.wholesaleCost) || 0;
+      if (includeWholesaleSelling && !showTotalsOnly)
+        finalMap[key][`${shopKey} wholesaleSelling`] +=
+          Number(r.wholesaleSelling) || 0;
+    });
+  });
+
+  const data = Object.values(finalMap);
+
+  data.forEach((row) => {
+    let sum = 0;
+    allShops.forEach((shop) => {
+      sum +=
+        row[`${shop} totalQty`] +
+        (includeTotalCost ? row[`${shop} grandTotalCost`] : 0) +
+        (includeTotalSelling ? row[`${shop} grandTotalSelling`] : 0);
+    });
+    row.total = sum;
+  });
+
+  // add totals row
+  const totalRow = {
+    "Major Category": "Total",
+  };
+  if (includeSub1) totalRow["Sub1 Category"] = "";
+  if (includeSub2) totalRow["Sub2 Category"] = "";
+  shopKeys.forEach((shop) => {
+    if (!showTotalsOnly) {
+      totalRow[`${shop} retail`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} retail`]),
+        0
+      );
+    }
+    if (!showTotalsOnly) {
+      totalRow[`${shop} wholesale`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} wholesale`]),
+        0
+      );
+    }
+
+    totalRow[`${shop} totalQty`] = data.reduce(
+      (a, r) => a + Number(r[`${shop} totalQty`]),
+      0
+    );
+    if (includeTotalCost && !showTotalsOnly)
+      totalRow[`${shop} grandTotalCost`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} grandTotalCost`]),
+        0
+      );
+    if (includeTotalSelling && !showTotalsOnly)
+      totalRow[`${shop} grandTotalSelling`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} grandTotalSelling`]),
+        0
+      );
+    if (includeRetailCost && !showTotalsOnly)
+      totalRow[`${shop} retailCost`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} retailCost`]),
+        0
+      );
+    if (includeRetailSelling && !showTotalsOnly)
+      totalRow[`${shop} retailSelling`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} retailSelling`]),
+        0
+      );
+    if (includeWholesaleCost && !showTotalsOnly)
+      totalRow[`${shop} wholesaleCost`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} wholesaleCost`]),
+        0
+      );
+    if (includeWholesaleSelling && !showTotalsOnly)
+      totalRow[`${shop} wholesaleSelling`] = data.reduce(
+        (a, r) => a + Number(r[`${shop} wholesaleSelling`]),
+        0
+      );
+  });
+
+  totalRow.total = data.reduce((acc, r) => acc + r.total, 0);
+
+  data.push(totalRow);
+
+  return { success: true, sortableKeys: [], data };
+};
+
+exports.acrossStockOnHandReport = async (req) => {
+  try {
+    // 1) parse + validate shopKeys
+    const rawKeys = req.query.shopKeys;
+    if (!rawKeys) {
+      throw new Error("`shopKeys` is required");
+    }
+    const shopKeys = String(rawKeys)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!shopKeys.length) {
+      throw new Error("At least one shopKey must be provided");
+    }
+
+    // 2) connection info
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+
+    // 3) fetch each shop's master‐db product fields
+    const perShopData = await Promise.all(
+      shopKeys.map(async (shopKey) => {
+        // find its stockmaster DB
+        const active = await databaseController.getActiveDatabases(
+          req.user,
+          shopKey
+        );
+        const stockmasterName = Object.values(active)
+          .flat()
+          .find((db) => db.toLowerCase().includes("master"));
+        if (!stockmasterName) {
+          // no master DB → no data
+          return { shopKey, rows: [] };
+        }
+
+        // connect to master DB
+        const db = createSequelizeInstanceCustom({
+          databaseName: stockmasterName,
+          host: serverHost,
+          username: serverUser,
+          password: serverPassword,
+          port: serverPort,
+        });
+
+        // pull the three fields from tblproducts
+        let rows = [];
+        try {
+          rows = await db.query(
+            `
+            SELECT
+              StockCode           AS stockcode,
+              Description1        AS stockdescription,
+              StockonHand         AS stockOnHand,
+              DefaultSellingPrice AS defaultSellingPrice,
+              LastCostPrice       AS lastCostPrice
+            FROM tblproducts
+            `,
+            { type: db.QueryTypes.SELECT }
+          );
+        } catch (err) {
+          // handle missing table gracefully
+          const noTable =
+            err.original &&
+            (err.original.code === "ER_NO_SUCH_TABLE" ||
+              err.original.errno === 1146);
+          if (noTable) {
+            console.warn(
+              `tblproducts missing in ${stockmasterName}, skipping.`
+            );
+          } else {
+            throw err;
+          }
+        }
+
+        return { shopKey, rows };
+      })
+    );
+
+    // 4) pivot into a product‐centric map
+    const prodMap = new Map();
+    perShopData.forEach(({ shopKey, rows }) => {
+      rows.forEach(
+        ({
+          stockcode,
+          stockdescription,
+          stockOnHand,
+          defaultSellingPrice,
+          lastCostPrice,
+        }) => {
+          const key = `${stockcode}|||${stockdescription}`;
+          if (!prodMap.has(key)) {
+            prodMap.set(key, {
+              stockcode,
+              stockdescription,
+              shops: {},
+            });
+          }
+          prodMap.get(key).shops[shopKey] = {
+            stockOnHand: Number(stockOnHand) || 0,
+            defaultSellingPrice: Number(defaultSellingPrice) || 0,
+            lastCostPrice: Number(lastCostPrice) || 0,
+          };
+        }
+      );
+    });
+
+    // 5) build final array, merging in each shop’s values
+    const data = [];
+    prodMap.forEach(({ stockcode, stockdescription, shops }) => {
+      const row = { stockcode, stockdescription };
+      shopKeys.forEach((shopKey) => {
+        const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+        const m = shops[shopKey] || {
+          stockOnHand: 0,
+          defaultSellingPrice: 0,
+          lastCostPrice: 0,
+        };
+        row[`${k} Stock on hand`] = m.stockOnHand;
+        row[`${k} Cost Price`] = m.lastCostPrice;
+        row[`${k} Selling Price`] = m.defaultSellingPrice;
+        row[`${k} Total Cost`] = m.lastCostPrice * m.stockOnHand;
+        row[`${k} Total Selling`] = m.defaultSellingPrice * m.stockOnHand;
+      });
+      data.push(row);
+    });
+
+    // 6) sortableKeys for the grid
+    const sortableKeys = shopKeys.flatMap((shopKey) => {
+      const k = shopKey.replace(/[^A-Za-z0-9]/g, "");
+      return [`${k} Stock on hand`, `${k} Selling Price`, `${k} Cost Price`];
+    });
+
+    return { success: true, sortableKeys, data };
+  } catch (err) {
+    throw err;
+  }
+};
+
+exports.acrossDailySalesReport = async (req) => {
+  // 1) parse + validate shopKeys, year, isDetailed
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+  const rawKeys = req.query.shopKeys;
+  if (!rawKeys) throw new Error("`shopKeys` is required");
+  const shopKeys = String(rawKeys)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!shopKeys.length)
+    throw new Error("At least one shopKey must be provided");
+
+  const isDetailed = req.query.isDetailed === "true";
+  // const isDetailed = true;
+
+  const startDate = req.query.startDate;
+  const endDate = req.query.endDate;
+
+  const startDay = startDate ? `${startDate} 00:00:00` : null;
+  const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+  const { year, months } = getYearAndMonthRange(startDate, endDate);
+  const expectedTables = months.map(
+    (month) => `${year}${month}tbldata_current_tran`
+  );
+
+  // 3) query each shop
+  // 2) fetch raw rows per shop
+  const rawData = await Promise.all(
+    shopKeys.map(async (shopKey) => {
+      const active = await databaseController.getActiveDatabases(
+        req.user,
+        shopKey
+      );
+      let historyDbName;
+      outer: for (const grp of Object.values(active)) {
+        for (const db of grp) {
+          if (db.includes("history")) {
+            historyDbName = db;
+            break outer;
+          }
+        }
+      }
+      if (!historyDbName) return { shopKey, rows: [] };
+
+      const db = createSequelizeInstanceCustom({
+        databaseName: historyDbName,
+        host: serverHost,
+        username: serverUser,
+        password: serverPassword,
+        port: serverPort,
+      });
+
+      const exist = await db.query(
+        `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
+        {
+          replacements: { db: historyDbName, list: expectedTables },
+          type: QueryTypes.SELECT,
+        }
+      );
+      const tables = exist.map((r) => r.Name);
+      if (!tables.length) return { shopKey, rows: [] };
+
+      const subqs = tables.map((tbl) =>
+        `
+        SELECT
+          hisyear, hismonth, hisday,
+          paymenttype,
+          SUM(linetotal) AS inclSelling,
+          SUM(linetotal)/(1+vatpercentage/100) AS exclSelling,
+          SUM(averagecostprice*qty) AS exclCost,
+          SUM(averagecostprice*qty)/(1+vatpercentage/100) AS inclCost,
+          SUM(valuediscount) AS vat
+        FROM ${tbl}
+        WHERE datetime BETWEEN :start AND :end
+        GROUP BY hisyear, hismonth, hisday, paymenttype, vatpercentage
+      `.trim()
+      );
+      const unionSql = subqs.join("\nUNION ALL\n");
+
+      const finalSql = `
+        SELECT
+          CONCAT(
+            hisyear, '-', LPAD(hismonth,2,'0'), '-', LPAD(hisday,2,'0')
+          ) AS date,
+          paymenttype,
+          SUM(inclSelling)    AS TotalInclSelling,
+          SUM(exclSelling)    AS TotalExclSelling,
+          SUM(exclCost)       AS TotalExclCost,
+          SUM(inclCost)       AS TotalInclCost,
+          SUM(vat)            AS TotalVAT
+        FROM (
+          ${unionSql}
+        ) AS u
+        GROUP BY date, paymenttype
+        ORDER BY date, paymenttype;
+      `;
+
+      const rows = await db.query(finalSql, {
+        replacements: {
+          start: startDay,
+          end: endDay,
+        },
+        type: QueryTypes.SELECT,
+      });
+      return { shopKey, rows };
+    })
+  );
+
+  // 3) if isDetailed=false => summary per shop
+  if (!isDetailed) {
+    const data = rawData.map(({ shopKey, rows }) => {
+      const summary = { "Shop Name": shopKey };
+      const acc = {
+        cash: 0,
+        card: 0,
+        "d.dep": 0,
+        acct: 0,
+        totalExclCost: 0,
+        totalInclCost: 0,
+        totalExclSelling: 0,
+        totalInclSelling: 0,
+        vat: 0,
+      };
+      rows.forEach((r) => {
+        const t = r.paymenttype.toLowerCase();
+        const inc = Number(r.TotalInclSelling) || 0;
+        if (t === "cash") acc.cash += inc;
+        else if (t === "card") acc.card += inc;
+        else if (t === "d.dep") acc["d.dep"] += inc;
+        else if (t === "acct") acc.acct += inc;
+        acc.totalExclCost += Number(r.TotalExclCost) || 0;
+        acc.totalInclCost += Number(r.TotalInclCost) || 0;
+        acc.totalExclSelling += Number(r.TotalExclSelling) || 0;
+        acc.totalInclSelling += inc;
+        acc.vat += Number(r.TotalVAT) || 0;
+      });
+      summary["Cash Sales"] = acc.cash.toFixed(2);
+      summary["Card Sales"] = acc.card.toFixed(2);
+      summary["D.Dep Sales"] = acc["d.dep"].toFixed(2);
+      summary["Acct Sales"] = acc.acct.toFixed(2);
+      summary["Total Excl Cost"] = acc.totalExclCost.toFixed(2);
+      summary["Total Incl Cost"] = acc.totalInclCost.toFixed(2);
+      summary["Total Excl Selling"] = acc.totalExclSelling.toFixed(2);
+      summary["Total Incl Selling"] = acc.totalInclSelling.toFixed(2);
+      summary["Day Profit"] = (
+        acc.totalExclSelling - acc.totalExclCost
+      ).toFixed(2);
+      summary["Total VAT"] = acc.vat.toFixed(2);
+      return summary;
+    });
+
+    const grandTotal = {
+      "Shop Name": "Grand Total",
+      "Cash Sales":
+        sum(data.map((r) => Number(r["Cash Sales"])))?.toFixed?.(2) || 0,
+      "Card Sales":
+        sum(data.map((r) => Number(r["Card Sales"])))?.toFixed?.(2) || 0,
+      "D.Dep Sales":
+        sum(data.map((r) => Number(r["D.Dep Sales"])))?.toFixed?.(2) || 0,
+      "Acct Sales":
+        sum(data.map((r) => Number(r["Acct Sales"])))?.toFixed?.(2) || 0,
+      "Total Excl Cost":
+        sum(data.map((r) => Number(r["Total Excl Cost"])))?.toFixed?.(2) || 0,
+      "Total Incl Cost":
+        sum(data.map((r) => Number(r["Total Incl Cost"])))?.toFixed?.(2) || 0,
+      "Total Excl Selling":
+        sum(data.map((r) => Number(r["Total Excl Selling"])))?.toFixed?.(2) ||
+        0,
+      "Total Incl Selling":
+        sum(data.map((r) => Number(r["Total Incl Selling"])))?.toFixed?.(2) ||
+        0,
+      "Day Profit":
+        sum(data.map((r) => Number(r["Day Profit"])))?.toFixed?.(2) || 0,
+      "Total VAT":
+        sum(data.map((r) => Number(r["Total VAT"])))?.toFixed?.(2) || 0,
+    };
+
+    data.push(grandTotal);
+
+    return { success: true, sortableKeys: [], data };
+  }
+
+  // 4) isDetailed=true => per-date breakdown
+  const perShopMap = {};
+  rawData.forEach(({ shopKey, rows }) => {
+    const map = new Map();
+    rows.forEach((r) => {
+      const d = r.date;
+      if (!map.has(d))
+        map.set(d, {
+          cash: 0,
+          card: 0,
+          "d.dep": 0,
+          acct: 0,
+          totalExclCost: 0,
+          totalInclCost: 0,
+          totalExclSelling: 0,
+          totalInclSelling: 0,
+          vat: 0,
+        });
+      const rec = map.get(d);
+      const t = r.paymenttype.toLowerCase();
+      const inc = Number(r.TotalInclSelling) || 0;
+      if (t === "cash") rec.cash += inc;
+      else if (t === "card") rec.card += inc;
+      else if (t === "d.dep") rec["d.dep"] += inc;
+      else if (t === "acct") rec.acct += inc;
+      rec.totalExclCost += Number(r.TotalExclCost) || 0;
+      rec.totalInclCost += Number(r.TotalInclCost) || 0;
+      rec.totalExclSelling += Number(r.TotalExclSelling) || 0;
+      rec.totalInclSelling += inc;
+      rec.vat += Number(r.TotalVAT) || 0;
+    });
+    perShopMap[shopKey] = map;
+  });
+
+  const dates = Array.from(
+    new Set(Object.values(perShopMap).flatMap((m) => Array.from(m.keys())))
+  ).sort();
+
+  const data = shopKeys
+    .map((shopKey) => {
+      const shopData = dates.map((date) => {
+        const rec = perShopMap[shopKey].get(date) || {};
+        return {
+          "Shop Name": shopKey,
+          date,
+          "Cash Sales": rec.cash?.toFixed?.(2) || 0,
+          "Card Sales": rec.card?.toFixed?.(2) || 0,
+          "D.Dep Sales": rec["d.dep"]?.toFixed?.(2) || 0,
+          "Acct Sales": rec.acct?.toFixed?.(2) || 0,
+          "Total Excl Cost": rec.totalExclCost?.toFixed?.(2) || 0,
+          "Total Incl Cost": rec.totalInclCost?.toFixed?.(2) || 0,
+          "Total Excl Selling": rec.totalExclSelling?.toFixed?.(2) || 0,
+          "Total Incl Selling": rec.totalInclSelling?.toFixed?.(2) || 0,
+          "Day Profit":
+            ((rec.totalExclSelling || 0) - (rec.totalExclCost || 0))?.toFixed?.(
+              2
+            ) || 0,
+          "Total VAT": rec.vat?.toFixed?.(2) || 0,
+        };
+      });
+      shopData.push({
+        "Shop Name": `${shopKey} Total`,
+        "Cash Sales":
+          sum(shopData.map((r) => Number(r["Cash Sales"])))?.toFixed?.(2) || 0,
+        "Card Sales":
+          sum(shopData.map((r) => Number(r["Card Sales"])))?.toFixed?.(2) || 0,
+        "D.Dep Sales":
+          sum(shopData.map((r) => Number(r["D.Dep Sales"])))?.toFixed?.(2) || 0,
+        "Acct Sales":
+          sum(shopData.map((r) => Number(r["Acct Sales"])))?.toFixed?.(2) || 0,
+        "Total Excl Cost":
+          sum(shopData.map((r) => Number(r["Total Excl Cost"])))?.toFixed?.(
+            2
+          ) || 0,
+        "Total Incl Cost":
+          sum(shopData.map((r) => Number(r["Total Incl Cost"])))?.toFixed?.(
+            2
+          ) || 0,
+        "Total Excl Selling":
+          sum(shopData.map((r) => Number(r["Total Excl Selling"])))?.toFixed?.(
+            2
+          ) || 0,
+        "Total Incl Selling":
+          sum(shopData.map((r) => Number(r["Total Incl Selling"])))?.toFixed?.(
+            2
+          ) || 0,
+        "Day Profit":
+          sum(shopData.map((r) => Number(r["Day Profit"])))?.toFixed?.(2) || 0,
+        "Total VAT":
+          sum(shopData.map((r) => Number(r["Total VAT"])))?.toFixed?.(2) || 0,
+      });
+      return shopData;
+    })
+    .flat();
+
+  const grandTotal = {
+    "Shop Name": "Grand Total",
+    "Cash Sales":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Cash Sales"]))
+      )?.toFixed?.(2) || 0,
+    "Card Sales":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Card Sales"]))
+      )?.toFixed?.(2) || 0,
+    "D.Dep Sales":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["D.Dep Sales"]))
+      )?.toFixed?.(2) || 0,
+    "Acct Sales":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Acct Sales"]))
+      )?.toFixed?.(2) || 0,
+    "Total Excl Cost":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total Excl Cost"]))
+      )?.toFixed?.(2) || 0,
+    "Total Incl Cost":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total Incl Cost"]))
+      )?.toFixed?.(2) || 0,
+    "Total Excl Selling":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total Excl Selling"]))
+      )?.toFixed?.(2) || 0,
+    "Total Incl Selling":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total Incl Selling"]))
+      )?.toFixed?.(2) || 0,
+    "Day Profit":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Day Profit"]))
+      )?.toFixed?.(2) || 0,
+    "Total VAT":
+      sum(
+        data
+          .filter((r) => r["Shop Name"].endsWith("Total"))
+          .map((r) => Number(r["Total VAT"]))
+      )?.toFixed?.(2) || 0,
+  };
+
+  data.push(grandTotal);
+  return { success: true, sortableKeys: [], data };
+};
+
+// exports.acrossInvoiceReport = async (req) => {
+//   const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+//   const rawKeys = req.query.shopKeys;
+//   if (!rawKeys) throw new Error("`shopKeys` is required");
+//   const shopKeys = String(rawKeys)
+//     .split(",")
+//     .map((s) => s.trim())
+//     .filter(Boolean);
+//   if (!shopKeys.length)
+//     throw new Error("At least one shopKey must be provided");
+//   const startDate = req.query.startDate;
+//   const endDate = req.query.endDate;
+
+//   const startDay = startDate ? `${startDate} 00:00:00` : null;
+//   const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+//   const { year, months } = getYearAndMonthRange(startDate, endDate);
+//   const expectedTables = months.map(
+//     (month) => `${year}${month}tbldata_current_tran`
+//   );
+
+//   const rawData = await Promise.all(
+//     shopKeys.map(async (shopKey) => {
+//       const active = await databaseController.getActiveDatabases(
+//         req.user,
+//         shopKey
+//       );
+
+//       const historyDbName = Object.values(active)
+//         .flat()
+//         .find((db) => db.toLowerCase().includes("history"));
+//       if (!historyDbName) return { shopKey, rows: [] };
+
+//       const stockmasterDbName = Object.values(active)
+//         .flat()
+//         .find((db) => db.toLowerCase().includes("master"));
+//       if (!stockmasterDbName) return { shopKey, rows: [] };
+
+//       const db = createSequelizeInstanceCustom({
+//         databaseName: historyDbName,
+//         host: serverHost,
+//         username: serverUser,
+//         password: serverPassword,
+//         port: serverPort,
+//       });
+
+//       const stockMasterDb = createSequelizeInstanceCustom({
+//         databaseName: stockmasterDbName,
+//         host: serverHost,
+//         username: serverUser,
+//         password: serverPassword,
+//         port: serverPort,
+//       });
+
+//       const exist = await db.query(
+//         `SELECT TABLE_NAME AS Name FROM INFORMATION_SCHEMA.TABLES
+//          WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
+//         {
+//           replacements: { db: historyDbName, list: expectedTables },
+//           type: QueryTypes.SELECT,
+//         }
+//       );
+//       const tables = exist.map((r) => r.Name);
+//       if (!tables.length) return { shopKey, rows: [] };
+
+//       const subqs = tables.map((tbl) =>
+//         `
+//         SELECT DISTINCT
+//           datetime,
+//           salenum,
+//           paymenttype,
+//           clerkname,
+//           invoicetotal
+//         FROM ${tbl}
+//         WHERE datetime BETWEEN :start AND :end
+//       `.trim()
+//       );
+//       const unionSql = subqs.join("\nUNION ALL\n");
+
+//       const finalSql = `
+//         SELECT
+//           datetime        AS DateTime,
+//           salenum         AS InvoiceNo,
+//           paymenttype     AS FinalizedAs,
+//           clerkname       AS ClerkName,
+//           invoicetotal    AS InvoiceTotal
+//         FROM (
+//           ${unionSql}
+//         ) AS u
+//         GROUP BY datetime
+//         ORDER BY datetime;
+//       `;
+
+//       const splitSql = `
+//       SELECT
+//         TransactionNum,
+//         PaymentType,
+//         TenderAmount,
+//         TotalAmount
+//         FROM tbldata_splittender
+//       `;
+
+//       const splitRows = await stockMasterDb.query(splitSql, {
+//         replacements: {
+//           start: startDay,
+//           end: endDay,
+//         },
+//         type: QueryTypes.SELECT,
+//       });
+//       const rows = await db.query(finalSql, {
+//         replacements: {
+//           start: startDay,
+//           end: endDay,
+//         },
+//         type: QueryTypes.SELECT,
+//       });
+
+//       const updatedRows = rows.map((r) => ({
+//         ...r,
+//         splitTenderCard:
+//           splitRows.find(
+//             (s) => s.TransactionNum === r.InvoiceNo && s.PaymentType === "Card"
+//           )?.TenderAmount || "-",
+//         splitTenderCash:
+//           splitRows.find(
+//             (s) => s.TransactionNum === r.InvoiceNo && s.PaymentType === "Cash"
+//           )?.TenderAmount || "-",
+//       }));
+//       return { shopKey, rows: updatedRows };
+//     })
+//   );
+
+//   const formattedData = rawData
+//     .map(({ shopKey, rows }) => {
+//       return rows.map((r) => ({
+//         "Shop Name": shopKey,
+//         "Date & Time": r.DateTime,
+//         "Invoice No": r.InvoiceNo,
+//         "Finalized As": r.FinalizedAs,
+//         "Split Tender Card": r.splitTenderCard,
+//         "Split Tender Cash": r.splitTenderCash,
+//         "Clerk Name": r.ClerkName,
+//         "Invoice Total": r.InvoiceTotal,
+//       }));
+//     })
+//     .flat();
+
+//   return { success: true, data: formattedData };
+// };
+
+// ---- Connection pool cache (one pool per host/user/port) ----
+
+exports.acrossInvoiceReport = async (req) => {
+  const { serverHost, serverUser, serverPassword, serverPort } = req.user || {};
+
+  const rawKeys = req.query.shopKeys;
+  if (!rawKeys) throw new Error("`shopKeys` is required");
+
+  const shopKeys = String(rawKeys)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!shopKeys.length)
+    throw new Error("At least one shopKey must be provided");
+
+  const startDate = req.query.startDate ?? null;
+  const endDate = req.query.endDate ?? null;
+
+  const startDay = startDate ? `${startDate} 00:00:00` : null;
+  const endDay = endDate ? `${endDate} 23:59:59` : null;
+
+  const { year, months } = getYearAndMonthRange(startDate, endDate);
+  const expectedTables = months.map((m) => `${year}${m}tbldata_current_tran`);
+
+  // Concurrency limit (tune 5–10)
+  const concurrency = Math.max(
+    1,
+    Math.min(parseInt(req.query.concurrency || "8", 10), 16)
+  );
+  const limit = pLimit(concurrency);
+
+  const serverDb = getPooledSequelizeForServer({
+    host: serverHost,
+    username: serverUser,
+    password: serverPassword,
+    port: serverPort,
+  });
+
+  const tasks = shopKeys.map((shopKey) =>
+    limit(() =>
+      runShopReport({
+        req,
+        serverDb,
+        shopKey,
+        expectedTables,
+        historyRange: { startDay, endDay },
+      })
+    )
+      .then((res) => ({ ok: true, ...res }))
+      .catch((err) => ({
+        ok: false,
+        shopKey,
+        error: err?.message || String(err),
+      }))
+  );
+
+  const results = await Promise.all(tasks);
+
+  const formattedData = [];
+  const errors = [];
+
+  for (const r of results) {
+    if (!r.ok) {
+      errors.push({ shopKey: r.shopKey, error: r.error });
+      continue;
+    }
+    for (const row of r.rows) {
+      formattedData.push({
+        "Shop Name": r.shopKey,
+        "Date & Time": row.DateTime,
+        "Invoice No": row.InvoiceNo,
+        "Finalized As": row.FinalizedAs,
+        "Split Tender Card": row.SplitTenderCard ?? "-",
+        "Split Tender Cash": row.SplitTenderCash ?? "-",
+        "Clerk Name": row.ClerkName,
+        "Invoice Total": row.InvoiceTotal,
+      });
+    }
+  }
+
+  return { success: true, data: formattedData, errors };
+};
+
+// ---- Per-shop query runner ----
+async function runShopReport({
+  req,
+  serverDb,
+  shopKey,
+  expectedTables,
+  historyRange,
+}) {
+  const active = await databaseController.getActiveDatabases(req.user, shopKey);
+
+  const historyDbName = Object.values(active)
+    .flat()
+    .find((db) => db.toLowerCase().includes("history"));
+  const stockmasterDbName = Object.values(active)
+    .flat()
+    .find((db) => db.toLowerCase().includes("master"));
+
+  if (!historyDbName || !stockmasterDbName) {
+    return { shopKey, rows: [] };
+  }
+
+  // Filter expected tables to existing ones
+  const exist = await serverDb.query(
+    `SELECT TABLE_NAME AS Name
+     FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN (:list)`,
+    {
+      replacements: { db: historyDbName, list: expectedTables },
+      type: QueryTypes.SELECT,
+    }
+  );
+
+  const tables = exist.map((r) => r.Name);
+  if (!tables.length) return { shopKey, rows: [] };
+
+  // Build UNION ALL
+  const unionSql = tables
+    .map((tbl) =>
+      `
+        SELECT
+          ${historyDbName}.${tbl}.datetime     AS DateTime,
+          ${historyDbName}.${tbl}.salenum      AS InvoiceNo,
+          ${historyDbName}.${tbl}.paymenttype  AS FinalizedAs,
+          ${historyDbName}.${tbl}.clerkname    AS ClerkName,
+          ${historyDbName}.${tbl}.invoicetotal AS InvoiceTotal
+        FROM ${historyDbName}.${tbl}
+        WHERE (:start IS NULL OR ${historyDbName}.${tbl}.datetime >= :start)
+          AND (:end   IS NULL OR ${historyDbName}.${tbl}.datetime <= :end)
+      `.trim()
+    )
+    .join("\nUNION ALL\n");
+
+  const finalSql = `
+    SELECT
+      u.DateTime,
+      u.InvoiceNo,
+      u.FinalizedAs,
+      u.ClerkName,
+      u.InvoiceTotal,
+      COALESCE(SUM(CASE WHEN st.PaymentType = 'Card' THEN st.TenderAmount END), 0) AS SplitTenderCard,
+      COALESCE(SUM(CASE WHEN st.PaymentType = 'Cash' THEN st.TenderAmount END), 0) AS SplitTenderCash
+    FROM (
+      ${unionSql}
+    ) AS u
+    LEFT JOIN ${stockmasterDbName}.tbldata_splittender st
+      ON st.TransactionNum = u.InvoiceNo
+    GROUP BY
+      u.DateTime, u.InvoiceNo, u.FinalizedAs, u.ClerkName, u.InvoiceTotal
+    ORDER BY u.DateTime
+  `;
+
+  const rows = await serverDb.query(finalSql, {
+    replacements: {
+      start: historyRange.startDay,
+      end: historyRange.endDay,
+    },
+    type: QueryTypes.SELECT,
+  });
+
+  return { shopKey, rows };
+}
 
 exports.allTblDataCancelTran = async (req) => {
   try {
@@ -2536,7 +4212,7 @@ exports.allDataMinStockLevel = async (req) => {
 exports.allDataMaxStockLevel = async (req) => {
   try {
     // Retrieve active databases
-    const { serverHost, serverPassword, serverUser , serverPort } = req.user;
+    const { serverHost, serverPassword, serverUser, serverPort } = req.user;
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       req.query.shopKey
