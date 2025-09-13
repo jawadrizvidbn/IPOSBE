@@ -102,3 +102,4 @@ typings/
 *.im
 
 .env*
+ecosystem.config.js
