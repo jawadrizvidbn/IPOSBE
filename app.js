@@ -44,7 +44,7 @@ app.use(bodyParser.json());
 
 const Port = config.server.Port;
 const DynamiclyIpAdress =
-  process.env?.APP_ENV === "local" ? "localhost" : "165.73.85.11";
+  process.env?.APP_ENV === "local" ? "localhost" : process.env.SERVER_IP;
 
 // Use the routes
 app.use("/api/database", databaseRoutes);
