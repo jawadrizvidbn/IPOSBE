@@ -9,6 +9,12 @@ const createSequelizeInstance = require("../utils/sequelizeInstance");
 const LZString = require("lz-string");
 const { serialize } = require("cookie");
 const Plan = require("../models/plan.model");
+const {
+  getClientIP,
+  getLocationFromIP,
+  getDeviceId,
+  parseUserAgent,
+} = require("../utils/utils");
 
 User.belongsTo(Plan, { foreignKey: "plan" });
 Plan.hasOne(User, { foreignKey: "plan" });
@@ -97,8 +103,6 @@ const reportPermissions = {
 
 // Generate JWT token with compressed permissions
 const generateToken = (user) => {
-  console.log(user, process.env.JWT_SECRET);
-
   return jwt.sign(user, process.env.JWT_SECRET, { expiresIn: "24h" });
 };
 
@@ -200,6 +204,12 @@ exports.create = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
+    const ip = getClientIP(req);
+    const loc = getLocationFromIP(ip); // or call an external GeoIP API
+    const deviceId = getDeviceId(req); // client-provided UUID or fallback
+    const uaInfo = parseUserAgent(req);
+
+    console.log({ ip, loc, deviceId, uaInfo });
     const { email, password } = req.body;
 
     // Find user by email
@@ -370,8 +380,6 @@ exports.updateUser = async (req, res) => {
       user.password = await bcrypt.hash(password, 10);
     }
 
-    console.log("permissions: ", typeof permissions);
-    console.log("allowedStores", typeof allowedStores);
     user.name = name;
     user.email = email;
     user.role = role;
@@ -584,7 +592,6 @@ exports.addShopAccess = async (req, res) => {
     }
 
     // Log reportPermissions to ensure it is correct
-    console.log("Report Permissions:", reportPermissions);
 
     // Merge new shop access with existing user permissions
     shopAccess.forEach((newAccess) => {

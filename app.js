@@ -37,6 +37,7 @@ const app = express();
 //   })
 // );
 
+app.set("trust proxy", true);
 app.use(cors());
 
 app.use(cookieParser());
@@ -73,10 +74,7 @@ const createAdminUserIfNotExists = async () => {
         role: "superadmin",
         // permissions: ["updateUser", "deleteUser", "viewUsers"],
       });
-
-      console.log("Admin user created", createdAdmin);
     } else {
-      console.log("Admin user already exists");
     }
   } catch (error) {
     console.error("Error creating admin user:", error);

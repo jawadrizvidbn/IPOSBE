@@ -9,6 +9,7 @@ const connectServerAndGetAllDatabases = async (req, res) => {
       host,
       port: port || "3306",
       dialect: "mysql",
+      logging: false,
     });
     const results = await connection.query("SHOW DATABASES", {
       type: QueryTypes.SELECT,
@@ -95,7 +96,6 @@ const getallshoptable = async (req, res) => {
 const getallshop = async (req, res) => {
   try {
     // Fetch all databases
-    console.log("allowed stores: ", req.user?.allowedStores);
 
     const {
       serverHost,
@@ -108,6 +108,7 @@ const getallshop = async (req, res) => {
     const userInstance = new Sequelize("", serverUser, serverPassword, {
       host: serverHost,
       port: serverPort,
+      logging: false,
       dialect: "mysql",
     });
     const results = await userInstance.query("SHOW DATABASES", {
@@ -269,7 +270,6 @@ const insertTableData = async (req, res) => {
 let activeDatabases = {};
 const findAllAndActiveDatabase = async (req, res) => {
   const baseName = req.params.baseName; // Ensure parameter name matches exactly
-  console.log(req.user);
 
   const { serverHost, serverUser, serverPassword, allowedStores, serverPort } =
     req.user;
@@ -281,6 +281,7 @@ const findAllAndActiveDatabase = async (req, res) => {
       host: serverHost,
       dialect: "mysql",
       port: serverPort,
+      logging: false,
     });
     // Fetch all databases
     const results = await userInstance.query("SHOW DATABASES", {
@@ -302,7 +303,6 @@ const findAllAndActiveDatabase = async (req, res) => {
 
     // Check if the requested group exists in groupedDatabases
     if (!groupedDatabases[baseName]) {
-      console.log(`Requested baseName '${baseName}' not found.`);
       return res.status(404).send("Group not found");
     }
     // Deactivate previously active group database, if any
@@ -327,6 +327,7 @@ const findAllAndActiveDatabase = async (req, res) => {
           host: serverHost,
           dialect: "mysql",
           port: serverPort,
+          logging: false,
           pool: {
             max: 1, // Only one connection per database
             min: 1,
@@ -361,7 +362,6 @@ const getActiveDatabases = async (user, store) => {
   const { serverHost, serverUser, serverPassword, allowedStores, serverPort } =
     user || {};
 
-  console.log("store: ", store);
   if (!store && typeof store !== "string") {
     throw new Error("Store not found");
   }
@@ -369,6 +369,7 @@ const getActiveDatabases = async (user, store) => {
     host: serverHost,
     dialect: "mysql",
     port: serverPort,
+    logging: false,
     dialectOptions: {
       connectTimeout: 1000000,
     },
@@ -418,7 +419,6 @@ const findAllAndActiveDatabaseMultiple = async (req, res) => {
         if (permission) {
           groupToActivate = permission.group;
         } else {
-          console.log(`User does not have permission for '${baseName}'.`);
           return res.status(403).send("Permission denied");
         }
       }

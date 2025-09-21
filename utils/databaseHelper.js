@@ -127,7 +127,6 @@ exports.getRequiredDbs = (activeDatabases) => {
 
       // Find history and stockmaster databases in the current group
       for (const dbName of dbNameList) {
-        console.log(dbName);
         if (dbName.includes("history")) {
           historyDbName = dbName;
         } else if (
@@ -148,7 +147,6 @@ exports.getRequiredDbs = (activeDatabases) => {
   return { historyDbName, stockmasterDbName };
 };
 
-
 /**
  * @param {string} startTable   e.g. "202502tbldata_current_tran"
  * @param {string} endTable     e.g. "202504tbldata_current_tran"
@@ -160,7 +158,7 @@ exports.monthRangeTables = (startTable, endTable, allTables) => {
   const prefix = (tblName) => tblName.slice(0, 6);
 
   const start = prefix(startTable);
-  const end   = prefix(endTable);
+  const end = prefix(endTable);
 
   return (
     allTables
@@ -173,9 +171,10 @@ exports.monthRangeTables = (startTable, endTable, allTables) => {
       })
       // sort ascending by that same 6-digit prefix
       .sort((a, b) => {
-        const pa = prefix(a), pb = prefix(b);
+        const pa = prefix(a),
+          pb = prefix(b);
         // lexicographic works for numeric YYYYMM
         return pa.localeCompare(pb);
       })
   );
-}
+};

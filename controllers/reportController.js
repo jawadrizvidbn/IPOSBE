@@ -387,7 +387,7 @@ const getDepartmentsSalesReports = async (tableName, req, res) => {
       earliestDate,
       latestDate,
     };
-    console.log(JSON.stringify(departmentReportData, null, 2));
+
     // Send response
     res.send(departmentReportData);
   } catch (error) {
@@ -467,7 +467,6 @@ exports.findAllTblDataCurrentTranNames = async (req, res) => {
 
         // Find history and stockmaster databases in the current group
         for (const dbName of dbNameList) {
-          console.log(dbName);
           if (dbName.includes("history")) {
             historyDbName = dbName;
           } else if (
@@ -2069,7 +2068,7 @@ exports.DailySalesReport = async (req, res, tableName) => {
     }); // Assuming the database name is the prefix for tables
 
     // SQL query with the correct database for joins
-    console.log(tableName, "rana here");
+
     if (!/^[0-9a-zA-Z_]+$/.test(tableName)) {
       throw new Error("Invalid table name");
     }
@@ -2234,7 +2233,7 @@ exports.DailySalesReport = async (req, res, tableName) => {
     }, {});
 
     const formattedDailyData = Object.values(dailySalesDataWithDate);
-    // console.log('Processed data with date:', formattedDailyData);
+
     const aggregatedResults = {
       totalInclSellingPrice: parseFloat(
         totalInclSellingPrice[0].incl_selling_Price
@@ -2246,7 +2245,7 @@ exports.DailySalesReport = async (req, res, tableName) => {
       totalExclCostPrice: parseFloat(totalExclCostPrice[0].excl_cost_Price),
       totalVat: parseFloat(totalVat[0].total_vat),
     };
-    // console.log('Aggregated monthly results:', aggregatedResults);
+
     // Process split tender results and format tenderDate
     const splitTenderData = splitTenderResults.map((record) => {
       const tenderDate = new Date(record.datetime);
@@ -2373,16 +2372,6 @@ exports.DailySalesReport = async (req, res, tableName) => {
         return total + dayData.cashTotal;
       },
       0
-    );
-
-    // Compare the totalInclSelling for card and cash payments with the overall totals
-    console.log(
-      "Total Card Incl Selling (Overall):",
-      totalCardInclSellingOverall
-    );
-    console.log(
-      "Total Cash Incl Selling (Overall):",
-      totalCashInclSellingOverall
     );
 
     // Include grandTotalsForDates in the response
@@ -3525,7 +3514,6 @@ exports.generateReportsForTables = async (req, res, tableNames) => {
     const allReports = [];
 
     for (const tableName of tableNames) {
-      console.log(`Processing table: ${tableName}`);
       const response = await exports.DailySalesReport(req, res, tableName);
 
       if (response.success) {
@@ -3563,7 +3551,6 @@ const executeUpdate = async () => {
 
     if (response.success) {
       const data = response.data;
-      // console.log(JSON.stringify(data, null, 2));
     } else {
       console.error(response.message);
     }

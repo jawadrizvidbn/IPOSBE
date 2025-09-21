@@ -297,7 +297,6 @@ exports.acrossStoresProductsReport = async (req) => {
     const expectedTables = months.map(
       (month) => `${year}${month}tbldata_current_tran`
     );
-    console.log({ expectedTables });
 
     // 3) Fetch tblstorefields for each shopKey, prefixing by DB name (sans “_master”)
     const storeFieldsByShop = await Promise.all(
@@ -2073,7 +2072,6 @@ exports.tblDataStockActivitySearchTables = (
           type: historyDb.QueryTypes.SELECT,
         });
         const totalCount = totalCountResult[0].total;
-        console.log(`Total records in ${tableName}: ${totalCount}`);
 
         let page = 1;
         let tableResults = [];
@@ -4288,18 +4286,10 @@ exports.sixWeek = async (requestBody, req) => {
     if (isNaN(start.getTime())) {
       throw new Error("Invalid startDate format");
     }
-    console.log(
-      `Start Date for Week Calculation: ${start.toISOString().split("T")[0]}`
-    );
 
     // Calculate the start date for 6 weeks prior to the given startDate
     const previousStartDate = new Date(start);
     previousStartDate.setDate(previousStartDate.getDate() - PB1Max * 7); // 6 weeks back
-    console.log(
-      `Start Date for Previous 6 Weeks: ${
-        previousStartDate.toISOString().split("T")[0]
-      }`
-    );
 
     let data = null;
     if (OptSupplier) {
@@ -4331,8 +4321,6 @@ exports.sixWeek = async (requestBody, req) => {
     });
 
     const weekData = generateWeekData(previousStartDate); // Generate previous 6 weeks
-    console.log(`Start Date of Week 1: ${weekData[0].startDate}`);
-    console.log(`End Date of Week 6: ${weekData[5].endDate}`);
 
     // Fetch current transaction data
     const currentTranData = await fetchCurrentTranData(

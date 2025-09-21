@@ -16,10 +16,6 @@ exports.checkAdminOrPermission = (requiredPermissions) => {
       next();
     } else {
       const userPermissions = (req.user && req.user.permissions) || [];
-      console.log("User Role:", userRole);
-      
-      console.log("User Permissions:", userPermissions);
-      console.log("Required Permissions:", requiredPermissions);
 
       // Ensure userPermissions is an array
       let parsedUserPermissions = userPermissions;

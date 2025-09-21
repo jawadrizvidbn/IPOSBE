@@ -18,8 +18,6 @@ exports.salesOverview = async (req, res) => {
       getStartDateEndDate(duration, true);
     const { startDate, endDate } = getStartDateEndDate(duration);
 
-    // console.log({ startDate, endDate });
-
     const activeDatabases = await databaseController.getActiveDatabases(
       req.user,
       shopKey
@@ -47,7 +45,6 @@ exports.salesOverview = async (req, res) => {
       endDateForTblTran,
       results
     );
-    console.log({ validTables });
 
     if (validTables.length === 0) {
       return res.status(404).json({ message: "No data found" });
@@ -113,11 +110,6 @@ exports.salesOverview = async (req, res) => {
       },
       type: historyDb.QueryTypes.SELECT,
     });
-
-    // const startNameExists = data.some(item => item.Name === startName)
-    // const endNameExists = data.some(item => item.Name === endName)
-
-    // console.log(results)
 
     res.send(finalResult);
   } catch (err) {
