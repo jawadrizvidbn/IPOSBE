@@ -1,5 +1,8 @@
 // app.js
 
+const dotenv = require("dotenv");
+dotenv.config();
+
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -12,8 +15,6 @@ const permissionRoutes = require("./routes/permissionRoute");
 const dashboardRoutes = require("./routes/dashboaordRoutes");
 const User = require("./models/user.model"); // Import the User model
 const cookieParser = require("cookie-parser");
-const dotenv = require("dotenv");
-dotenv.config();
 
 const app = express();
 
