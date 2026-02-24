@@ -1,15 +1,16 @@
 // config.js
 
 module.exports = {
-    mysql: {
-      username: 'root',
-      password: 'New@Lambert',
-      // host: '197.242.148.70',
-      host: '165.73.85.11',
-      database: '' // Optionally, you can set the database name here
-    },
-    server: {
-      Port: 3001
-    }
-  };
-  
+  mysql: {
+    username: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    host: process.env.DB_HOST,
+    database: "", // Optionally, you can set the database name here
+  },
+  server: {
+    Port: process.env.DB_PORT,
+  },
+  jwt: {
+    secret: process.env.JWT_SECRET,
+  },
+};
