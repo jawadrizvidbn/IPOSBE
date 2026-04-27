@@ -3,10 +3,6 @@ const {
   getDatabases,
   getDatabasesCustom,
 } = require("../../utils/databaseHelper"); // Adjust the path if necessary
-const {
-  getDatabasesMultiple,
-  getDatabasesMultipleCustom,
-} = require("../../utils/databaseHelperMultiple"); // Adjust the path if necessary
 const databaseController = require("../../controllers/databaseController");
 const { QueryTypes, Sequelize } = require("sequelize");
 const dateFns = require("date-fns");
@@ -119,7 +115,20 @@ exports.companydetailstblReg = async (req) => {
 
 exports.acrossReport = async (startDate, endDate, req) => {
   try {
-    const { serverHost, serverUser, serverPassword } = req.user;
+    const { serverHost, serverUser, serverPassword, serverPort } = req.user;
+
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      throw new Error("Start date cannot be greater than end date");
+    }
+
+    // Single shared pool for the whole MySQL server — instead of one pool per shop DB.
+    // Why: 50+ shops × 2 DBs × max:1000 was exhausting MySQL's max_connections.
+    const sequelize = getPooledSequelizeForServer({
+      host: serverHost,
+      username: serverUser,
+      password: serverPassword,
+      port: serverPort,
+    });
 
     // --- parse shopKeys ---
     const shopKeysArray = (req.query.shopKeys || "")
@@ -127,94 +136,100 @@ exports.acrossReport = async (startDate, endDate, req) => {
       .map((k) => k.trim())
       .filter(Boolean);
 
-    // --- get history + stockmaster DBs per shop ---
+    // --- resolve history + stockmaster DB *names* per shop (no instances) ---
     const dbGroups = await Promise.all(
       shopKeysArray.map(async (shopKey) => {
         const activeDbs = await databaseController.getActiveDatabases(
           req.user,
           shopKey
         );
-        return getDatabasesMultipleCustom({
-          activeDatabasesMultiple: activeDbs,
-          serverHost,
-          serverUser,
-          serverPassword,
-        });
+        const historyDbNames = [];
+        const stockmasterDbNames = [];
+        for (const group of Object.values(activeDbs)) {
+          for (const dbName of group) {
+            if (dbName.endsWith("history")) historyDbNames.push(dbName);
+            else if (dbName.endsWith("stockmaster") || dbName.endsWith("master"))
+              stockmasterDbNames.push(dbName);
+          }
+        }
+        return { historyDbNames, stockmasterDbNames };
       })
     );
 
-    // flatten history DBs for the qty queries
-    const historyDbs = dbGroups.flatMap((g) => g.historyDbs);
+    const historyDbNames = dbGroups.flatMap((g) => g.historyDbNames);
 
-    // --- 0) fetch tblstorefields from each shop’s stockmaster DB, handling missing table ---
+    // Bound concurrency so we don't fan out hundreds of queries against the shared pool.
+    const limit = pLimit(8);
+
+    // --- 0) fetch tblstorefields from each shop's stockmaster DB, handling missing table ---
     const storeFieldsByShop = await Promise.all(
-      dbGroups.map(async (group) => {
-        const stockmasterDb = group.stockmasterDbs[0];
-        const dbName = stockmasterDb.config.database;
-        let row = {};
-
-        try {
-          const rows = await stockmasterDb.query(
-            `SELECT * FROM tblstorefields`,
-            { type: stockmasterDb.QueryTypes.SELECT }
-          );
-          row = rows[0] || {};
-        } catch (err) {
-          const noTable =
-            err.original &&
-            (err.original.code === "ER_NO_SUCH_TABLE" ||
-              err.original.errno === 1146);
-          if (noTable) {
-            console.warn(
-              `tblstorefields missing in ${dbName}, skipping store‐fields.`
+      dbGroups.map((group) =>
+        limit(async () => {
+          const dbName = group.stockmasterDbNames[0];
+          if (!dbName) return {};
+          let row = {};
+          try {
+            const rows = await sequelize.query(
+              `SELECT * FROM \`${dbName}\`.\`tblstorefields\``,
+              { type: QueryTypes.SELECT }
             );
-          } else {
-            throw err;
+            row = rows[0] || {};
+          } catch (err) {
+            const noTable =
+              err.original &&
+              (err.original.code === "ER_NO_SUCH_TABLE" ||
+                err.original.errno === 1146);
+            if (noTable) {
+              console.warn(
+                `tblstorefields missing in ${dbName}, skipping store‐fields.`
+              );
+            } else {
+              throw err;
+            }
           }
-        }
 
-        return Object.entries(row).reduce((acc, [col, val]) => {
-          const baseDb = dbName.replace(/_?master$/i, "");
-          const safeDb = baseDb.replace(/[^a-zA-Z0-9_]/g, "_");
-          acc[`${safeDb}_${col}`] = val;
-          return acc;
-        }, {});
-      })
+          return Object.entries(row).reduce((acc, [col, val]) => {
+            const baseDb = dbName.replace(/_?master$/i, "");
+            const safeDb = baseDb.replace(/[^a-zA-Z0-9_]/g, "_");
+            acc[`${safeDb}_${col}`] = val;
+            return acc;
+          }, {});
+        })
+      )
     );
 
     // --- 1) find all the matching history tables ---
     const tableInfoArray = await Promise.all(
-      historyDbs.map(async (historyDb) => {
-        const dbName = historyDb.config.database;
-        const tables = await historyDb.query("SHOW TABLES", {
-          type: historyDb.QueryTypes.SELECT,
-        });
-        const matching = tables
-          .map((t) => Object.values(t)[0])
-          .filter((name) => /^\d{6}tbldata_current_tran$/.test(name));
-        return { historyDb, dbName, matchingTables: matching };
-      })
+      historyDbNames.map((dbName) =>
+        limit(async () => {
+          const tables = await sequelize.query(
+            `SHOW TABLES FROM \`${dbName}\``,
+            { type: QueryTypes.SELECT }
+          );
+          const matching = tables
+            .map((t) => Object.values(t)[0])
+            .filter((name) => /^\d{6}tbldata_current_tran$/.test(name));
+          return { dbName, matchingTables: matching };
+        })
+      )
     );
 
-    // --- 2) pull stockcode/description/qty from each table in parallel ---
-    const queryPromises = tableInfoArray.flatMap(
-      ({ historyDb, dbName, matchingTables }) =>
-        matchingTables.map((table) => {
-          let sql = `SELECT stockcode, stockdescription, qty FROM ${table}`;
+    // --- 2) pull stockcode/description/qty from each table in parallel (bounded) ---
+    const queryPromises = tableInfoArray.flatMap(({ dbName, matchingTables }) =>
+      matchingTables.map((table) =>
+        limit(async () => {
+          let sql = `SELECT stockcode, stockdescription, qty FROM \`${dbName}\`.\`${table}\``;
           if (startDate && endDate) {
-            if (new Date(startDate) > new Date(endDate)) {
-              throw new Error("Start date cannot be greater than end date");
-            }
             sql += ` WHERE datetime BETWEEN :startDate AND :endDate`;
           }
-          return historyDb
-            .query(sql, {
-              type: historyDb.QueryTypes.SELECT,
-              timeout: 90000,
-              replacements: { startDate, endDate },
-            })
-            .then((res) => ({ dbName, rows: res }));
+          const rows = await sequelize.query(sql, {
+            type: QueryTypes.SELECT,
+            timeout: 90000,
+            replacements: { startDate, endDate },
+          });
+          return { dbName, rows };
         })
+      )
     );
     const tableResults = await Promise.all(queryPromises);
 
@@ -241,7 +256,7 @@ exports.acrossReport = async (startDate, endDate, req) => {
     if (!Object.keys(all).length) throw new Error("No data found");
 
     // --- 4) build finalResults, merging in the store-fields per shop ---
-    const dbNames = [...new Set(historyDbs.map((db) => db.config.database))];
+    const dbNames = [...new Set(historyDbNames)];
     const finalResults = Object.values(all).map((item) => {
       // ensure each db column exists:
       dbNames.forEach((dbName) => {
