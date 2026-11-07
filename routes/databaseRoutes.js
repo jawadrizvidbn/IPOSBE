@@ -2,9 +2,13 @@
 
 const express = require("express");
 const router = express.Router();
+const tierReportController = require('../controllers/retailWholesaleTierController');
 const databaseController = require("../controllers/databaseController");
 const reportController = require("../controllers/reportController");
 const checkSuperadmin = require("../middleware/superadminMiddleware");
+
+// Separate report endpoint; existing report handlers are unchanged.
+router.get('/retail-wholesale-tier-report', checkSuperadmin, tierReportController.getReport);
 
 router.post(
   "/connect-new-server",
