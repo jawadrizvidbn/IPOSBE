@@ -12,6 +12,7 @@ const query = {
   endDate: "2026-11-30",
 };
 
+// Verify validation rejects invalid dates and unauthorized store names.
 test("validates dates and exact store access, including superadmins", () => {
   assert.throws(
     () => logic.parseRequest({ ...query, startDate: "2026-02-30" }, user),
@@ -39,6 +40,7 @@ test("validates dates and exact store access, including superadmins", () => {
   );
 });
 
+// Verify monthly enumeration and inclusive date handling across year boundaries.
 test("enumerates every month across years and uses an exclusive next-day bound", () => {
   const request = logic.parseRequest(
     { ...query, startDate: "2025-12-15", endDate: "2026-02-28" },
@@ -52,6 +54,7 @@ test("enumerates every month across years and uses an exclusive next-day bound",
   assert.equal(request.endExclusive, "2026-03-01");
 });
 
+// Exercise the generated calculation SQL against transaction edge cases.
 test("executes generated SQL against boundary, group, marker, null and refund fixtures", () => {
   // SQLite is a local calculation check, not MySQL compatibility certification.
   // Its IS operator implements the null-safe equality used by MySQL <=> here.
@@ -125,6 +128,7 @@ print(json.dumps([dict(r) for r in db.execute(request['sql'], {'start':'2026-11-
   }
 });
 
+// Verify aggregation keeps products and branch totals correctly reconciled.
 test("merges months by stock code, preserves zeroes and keeps branch totals independent", () => {
   const row = {
     stockcode: "001",
@@ -147,6 +151,7 @@ test("merges months by stock code, preserves zeroes and keeps branch totals inde
   assert.equal(result.totals.totalValue, 0);
 });
 
+// Stub existing database helpers so service tests never access live databases.
 function loadService(
   queryHandler,
   discover = async (_, shop) => ({ [shop]: [`${shop}history`] }),
@@ -195,6 +200,7 @@ function loadService(
   };
 }
 
+// Verify existing helper reuse, missing-data warnings and connection cleanup.
 test("reuses existing discovery and connection helpers, warns on missing months and closes pools", async () => {
   const service = loadService(
     async () => [],
@@ -217,6 +223,7 @@ test("reuses existing discovery and connection helpers, warns on missing months 
   assert.equal(failing.closed(), 1);
 });
 
+// Verify credential forwarding and monthly query parameters through the existing factory.
 test("fetches branch monthly data through the existing factory with user credentials and bound dates", async () => {
   let monthlyQueries = 0;
   const service = loadService(async (sql, options, connection) => {

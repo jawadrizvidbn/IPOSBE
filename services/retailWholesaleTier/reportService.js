@@ -14,11 +14,14 @@ const {
  * Only classification/aggregation is specific to the new tier report.
  */
 async function generateReport(query, user) {
+  // Validate request inputs before reusing the existing database access flow.
   const request = parseRequest(query, user);
   const { serverHost, serverUser, serverPassword, serverPort } = user;
 
+  // Fetch selected branches concurrently, matching the original report.
   const branches = await Promise.all(
     request.shops.map(async (shopKey) => {
+      // Discover the user’s branch databases through the existing shared helper.
       const active = await databaseController.getActiveDatabases(user, shopKey);
       let historyDbName;
 
@@ -34,6 +37,7 @@ async function generateReport(query, user) {
 
       const rows = [];
       const warnings = [];
+      // Report a missing history database explicitly instead of hiding incomplete data.
       if (!historyDbName) {
         warnings.push(`${shopKey}: history database not found.`);
         return { shopKey, rows, warnings };
@@ -48,6 +52,7 @@ async function generateReport(query, user) {
         port: serverPort,
       });
 
+      // Discover available monthly tables within the selected history database.
       try {
         const existing = await db.query(
           `SELECT TABLE_NAME AS Name
@@ -62,6 +67,7 @@ async function generateReport(query, user) {
 
         // Classify each month separately, as required by the customer's SQL.
         for (const month of request.months) {
+          // Warn about absent months while keeping results from available months.
           if (!tables.has(month)) {
             warnings.push(
               `${shopKey}: ${month.slice(0, 4)}-${month.slice(
@@ -72,6 +78,7 @@ async function generateReport(query, user) {
             continue;
           }
 
+          // Execute the tier SQL with bound dates and append this month’s results.
           rows.push(
             ...(await db.query(buildMonthlyQuery(month), {
               replacements: {
@@ -83,6 +90,7 @@ async function generateReport(query, user) {
           );
         }
 
+        // Preserve branch identity for the final cross-store aggregation.
         return { shopKey, rows, warnings };
       } finally {
         // Release the new report's history connection, including query failures.
@@ -91,6 +99,7 @@ async function generateReport(query, user) {
     }),
   );
 
+  // Combine branch results and expose any missing-data warnings to the frontend.
   return {
     ...aggregateResults(branches),
     shops: request.shops,
