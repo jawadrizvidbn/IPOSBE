@@ -1,105 +1,146 @@
-# Retail / Wholesale Tier Report
+# Retail / Wholesale category and combo report
 
-## Purpose and isolation
+## Scope and status
 
-This is a new Across Store report. It does not replace or change the existing
-Retail / Wholesale report. Its endpoint is:
+This enhances only the new `/api/database/retail-wholesale-tier-report` endpoint.
+The original Retail/Wholesale and category reports are untouched. Frontend and
+backend revisions must be released together: the response now includes combo,
+regular, unmatched and reconciliation metrics.
 
-`GET /api/database/retail-wholesale-tier-report?shopKeys=Beacon,Bellville&startDate=2026-11-01&endDate=2026-11-30`
+**Do not deploy this revision until the reference sale comparison and monetary reconciliation have been reviewed.** No production deployment is part of this implementation.
 
-The existing Bearer-token middleware authenticates the caller. The new service
-then checks every requested store against the current user's `allowedStores`,
-including superadmins, matching the existing store selector's access list.
-Dates are required, must be real calendar dates, and must be in ascending order.
+## Inputs, sources and access
 
-## Classification, in order
+The endpoint accepts authorized `shopKeys`, `startDate` and inclusive `endDate`.
+Validation and the existing authentication middleware remain in place. Dates are
+converted to an exclusive next-day bound and every touched monthly table is queried
+independently, including year boundaries. Grouping never crosses branches/months.
 
-1. A line is marked only if **both** `CehqueNum` and `Cardnum` are nonblank after
-   trimming. NULL is treated as blank. Cardnum is a marker, never a quantity.
-2. Within each branch and monthly history table, select transactions inside the
-   requested date range. Sum `COALESCE(qty, 0)` for marked lines sharing
-   `(salenum, majorno, sub1no)`.
-3. Assign each marked line a tier using that group's quantity:
+`reportService.js` still calls `databaseController.getActiveDatabases(user, shopKey)`,
+selects the first history database exactly as the original report, and uses
+`createSequelizeInstanceCustom` with the existing user's connection settings.
+Monthly tables are discovered through INFORMATION_SCHEMA. Missing databases or
+months produce warnings; failed queries fail the report, and the history connection
+is closed in `finally`. No new credentials, database writes or schema changes are introduced.
 
-   | Group quantity | Classification |
-   | --- | --- |
-   | Below 10 | Retail |
-   | At least 10, below 100 | Wholesale Tier 1 |
-   | At least 100, below 1,000 | Wholesale Tier 2 |
-   | At least 1,000 | Wholesale Tier 3 |
+## Observed fields and markers
 
-4. Unmarked lines always remain Retail, even if their sale/category group has
-   marked lines in a wholesale tier.
-5. Aggregate quantities from `qty` and sales values from `linetotal` by stock code.
-   Missing quantities/values contribute zero. No additional tax, payment, transfer,
-   discount or cancellation filters are introduced beyond the supplied SQL.
+The reference video shows `Category` and `ComboGroup` in the actual `CehqueNum`
+field, along with `qty`, `Cardnum`, `majorno`, `sub1no` and `sub2no`.
+Existing source uses `salenum`, `stockcode`, `stockdescription`, `datetime` and
+`linetotal`. The video's visible section does not establish salenum or linetotal.
+The existing category report calls linetotal totalSelling; using it here remains
+provisional pending monetary reconciliation with the customer's reference.
 
-Example: marked products A and B have quantities 6 and 5 on the same sale with
-matching categories. Both are Tier 1 (group quantity 11). An unmarked quantity
-100 in that same group remains Retail and does not increase the marked group.
+Only exact byte values `Category` and `ComboGroup` qualify for the new tiers.
+`Combo` remains separately identifiable as an unmatched legacy Retail marker;
+it is never merged into ComboGroup. Cardnum is not summed, grouped or required
+for marker eligibility. Its numeric appearance in sample lines does not make it
+a group identifier.
 
-The join uses MySQL's null-safe `<=>` comparison for majorno and sub1no. Sale
-numbers use ordinary equality, exactly as in the customer's query. Grouping
-never crosses monthly tables or branches. Refunds/negative quantities remain
-signed and affect group thresholds and totals exactly as the supplied SQL does.
-Fractional quantities use exact numeric thresholds, not integer-rounded ranges.
+## Grouping and line allocation
 
-## Dates, database discovery, and aggregation
+`groupClassification.js` centralizes the optional grouping:
 
-The UI end date is inclusive. The SQL uses `datetime >= startDate` and
-`datetime < dayAfterEndDate`, so the entire last day is included. Month names
-are generated separately for each year/month; December–January ranges work.
+- Checkbox **unchecked** (default): Sale + Major + Sub1, for both ComboGroup and Category.
+- Checkbox **checked**: Sale + Major + Sub1 + Sub2, for both markers.
 
-Database discovery reuses `databaseController.getActiveDatabases(user, shopKey)`
-and the first database containing `history`, exactly as the existing Retail /
-Wholesale report does. Connection creation reuses `createSequelizeInstanceCustom`
-with the same user host, port, username, password, dialect and pool settings.
-Stores are fetched with Promise.all, matching the existing report. There is no
-separate discovery SQL or custom connection configuration in this report. Monthly tables are checked in INFORMATION_SCHEMA.
-Missing databases/months produce explicit warnings and available data is still
-returned. Query/connection failures fail the request rather than silently
-returning incomplete results. A warning means the report may be incomplete.
+The API accepts `includeSub2=true|false` as a boolean or exact query string;
+omitted means false. Other values are rejected before database discovery.
+The effective Sub2 key is the same in the aggregate and join, preventing row
+multiplication. Markers remain separate in both modes. Product rows are not merged.
 
-Classification happens per month before aggregation. Monthly results are merged
-by stock code alone. If descriptions differ, the lexicographically greatest
-returned description is used as a stable display label. Null stock codes remain
-a distinct group. Branch names remain intact in nested `shops` objects.
+The clearer screenshot confirms ComboGroup quantities of 3 in sales 44464.2 and
+44472.2 split into 2 and 1 when Sub2 is included. Category quantity 14 in sale
+44472.2 splits into 8/5/1. The latest business instruction makes Sub2 selectable
+instead of imposing one grouping interpretation.
 
-`retailQty/Value`, `wholesaleTier1Qty/Value`, `wholesaleTier2Qty/Value`,
-`wholesaleTier3Qty/Value` and `totalQty/Value` are returned per product/branch,
-with per-product all-store totals, branch totals, and overall totals. Totals
-include all classifications even when the UI hides some columns.
+The derived subquery sums signed `COALESCE(qty,0)` over those keys within the
+report dates. Category keys use null-safe joins. Sale IDs use ordinary equality:
+missing sale IDs cannot qualify for a grouped tier. Exact marker grouping uses
+HEX to avoid accidental merging under case-insensitive database collations.
+No DISTINCT line elimination occurs; identical real transaction rows remain rows.
 
-## Modules
+A single unique group joins back to each original product line. That group's sum
+selects the classification, but only the original line's qty and linetotal are
+allocated to that product. Group values are never repeated against each product.
+The query uses derived tables and CASE expressions compatible with MySQL 5.1;
+there are no CTEs or window functions.
 
-- `services/retailWholesaleTier/reportLogic.js`: pure validation, monthly SQL,
-  and aggregation functions.
-- `services/retailWholesaleTier/reportService.js`: existing discovery/connection helper reuse,
-  monthly queries, response assembly, and history connection cleanup.
-- `controllers/retailWholesaleTierController.js`: HTTP responses/errors.
-- `routes/databaseRoutes.js`: one additional authenticated route.
+## Mutually exclusive leaf buckets
 
-SQL uses derived tables, CASE, GROUP BY and `<=>`; no CTEs/window functions or
-new schema are needed. Values use Sequelize replacements. The existing connection factory selects the history database; generated monthly
-identifiers are validated.
+| Bucket | Rule |
+|---|---|
+| Regular Retail | Both marker fields blank after trim/null normalization |
+| Combo 3 / 6 / 9 | Exact ComboGroup marker and grouped qty exactly 3 / 6 / 9 |
+| Category 10–99 | Exact Category marker and 10 <= grouped qty < 100 |
+| Category 100–999 | Exact Category marker and 100 <= grouped qty < 1000 |
+| Category 1000+ | Exact Category marker and grouped qty >= 1000 |
+| Unmatched Retail | No confirmed tier; original SQL CASE classifies the line as Retail |
+| Unmatched Wholesale | No confirmed tier; original SQL CASE classifies the line as Wholesale |
 
-## Verification and deployment
+The fallback CASE is the original SQL expression:
+`CehqueNum IN ('Combo','ComboGroup','')` => Retail, else Wholesale. Its collation
+semantics are preserved on the fallback path. The explicit normalized both-blank
+Regular Retail rule precedes fallback, as confirmed by the new requirement.
+Whitespace/case variants of nonblank markers are not silently granted new tiers.
 
-Run `node --test tests/retailWholesaleTier.test.js` from IPOSBE. The calculation
-fixtures execute generated SQL with SQLite's `IS` substituted for MySQL `<=>`.
-This checks calculations locally; it does not certify MySQL 5.1 execution or
-production performance. Service lifecycle tests stub the existing discovery and connection helpers,
-verify credential/port forwarding, and check history connection cleanup.
-The shared discovery helper retains its existing connection lifecycle; this
-feature does not modify shared helper behavior.
+Examples of unmatched: ComboGroup qty 4/7/12, Category qty 9, unknown markers,
+legacy Combo markers, missing sale IDs and partial blank markers that cannot
+qualify. They are visible in separate Qty/Value columns. A warning counts actual
+unmatched lines even if refunds cancel their net quantity/value to zero.
 
-Before rollout, execute on a representative MySQL 5.1 branch with real monthly
-tables, compare with the customer's SQL, and inspect query timings/EXPLAIN.
-No indexes or schema changes are made automatically. Existing monthly exports
-show only the transaction primary key, so large datasets may need DBA-reviewed
-indexes after measurement. JavaScript aggregation uses existing project numeric
-conventions (Number); it is not arbitrary-precision financial accounting.
+## Totals and reconciliation
 
-Deploy backend support before or together with the frontend. Manually smoke-test
-existing Across Store reports, selection, and exports, then the new report's
-single/multiple branches, multi-month ranges, missing months, and tier filters.
+For both quantities and monetary values:
+
+- Retail Total = Regular Retail + Combo 3 + Combo 6 + Combo 9 + Unmatched Retail.
+- Wholesale Total = Category tier 1 + tier 2 + tier 3 + Unmatched Wholesale.
+- Total = Retail Total + Wholesale Total.
+
+When unmatched Wholesale is zero, Wholesale Total equals exactly the three
+category tiers. Including its separately displayed unmatched component is necessary
+to preserve legacy Wholesale money without dropping it or moving it to Retail.
+Totals must not be added to their leaf buckets again. Hidden UI columns do not
+change any subtotal or total.
+
+The response retains product `data`, `shops`, `branchTotals`, `totals`, `warnings`
+and adds the active `grouping`. Product rows remain keyed by stockcode with a
+stable lexicographic-max description across monthly/branch results.
+
+## Synthetic sample calculations
+
+- Same sale/category/marker: A qty 20/value 200, B qty 30/value 300, C qty 25/value
+  250 => group qty 75; each product's own value enters Category 10–99, total 750.
+- Same combo group: A qty 1/value 10 and B qty 2/value 20 => group qty 3; product
+  values remain 10 and 20 in Combo 3, total 30, never 30 per product.
+- Category qty 9/value 90 => Unmatched Wholesale 90, included once in Wholesale Total.
+- ComboGroup qty 4/value 40 => Unmatched Retail 40, included once in Retail Total.
+
+## Validation and release gate
+
+Run `node --test tests/groupClassification.test.js tests/retailWholesaleTier.test.js`.
+Tests execute generated SQL in SQLite with equivalent HEX and null-safe equality,
+covering tier boundaries, signed refunds, nulls, duplicate rows, separated markers,
+sales/Sub2, date bounds, allocation, branch totals and warnings. This is not a live
+MySQL 5.1 certification or reconciliation against production records.
+
+See `category-combo-validation.md` and the read-only helper for the remaining actual
+sale validation. getGroupFields(includeSub2) describes the selected keys; the API echoes both
+includeSub2 and grouping. The UI and exports use returned metadata, never an
+unsaved checkbox change.
+
+## Latest audio clarification: normal columns versus validation
+
+The normal UI has Pure Retail, Combo 3/6/9, Category tiers and totals; Unmatched
+Retail/Wholesale are no longer normal business columns. The API retains those
+internal counters only to disclose unexpected marked groups without losing money.
+The response's validationLineCount and warning flag such records, including net-zero
+refund cases. The UI shows diagnostic amounts, and exports add explicitly labelled
+Validation Retail/Wholesale Qty/Value fields only when anomalies exist. Valid POS
+records therefore show the client's requested columns and totals alone.
+
+Sub2 is optional for BOTH marker types. includeSub2 defaults false. A checked UI
+control sends true; exact string false remains false. The API echoes includeSub2
+and grouping, and exports include the generated grouping in each row and filename.
+The user's original choice of separate marker defaults is superseded by this checkbox.

@@ -1,5 +1,6 @@
 const { QueryTypes } = require("sequelize");
 const databaseController = require("../../controllers/databaseController");
+const { getGroupFields } = require("./groupClassification");
 const createSequelizeInstanceCustom = require("../../utils/sequelizeInstanceCustom");
 const {
   parseRequest,
@@ -80,7 +81,7 @@ async function generateReport(query, user) {
 
           // Execute the tier SQL with bound dates and append this month’s results.
           rows.push(
-            ...(await db.query(buildMonthlyQuery(month), {
+            ...(await db.query(buildMonthlyQuery(month, request.includeSub2), {
               replacements: {
                 start: request.start,
                 endExclusive: request.endExclusive,
@@ -88,6 +89,12 @@ async function generateReport(query, user) {
               type: QueryTypes.SELECT,
             })),
           );
+        }
+
+        // Disclose unmatched lines even when signed quantities and values cancel to zero.
+        const unmatchedLines = rows.reduce((sum, row) => sum + Number(row.unmatchedLineCount || 0), 0);
+        if (unmatchedLines) {
+          warnings.push(`${shopKey}: ${unmatchedLines} unmatched lines retain their existing Retail/Wholesale classification; review validation amounts before using these totals.`);
         }
 
         // Preserve branch identity for the final cross-store aggregation.
@@ -102,8 +109,13 @@ async function generateReport(query, user) {
   // Combine branch results and expose any missing-data warnings to the frontend.
   return {
     ...aggregateResults(branches),
+    // Keep unexpected records visible as validation, outside the standard business columns.
+    validationLineCount: branches.reduce((sum, branch) => sum + branch.rows.reduce((count, row) => count + Number(row.unmatchedLineCount || 0), 0), 0),
     shops: request.shops,
     warnings: branches.flatMap((branch) => branch.warnings),
+    // Echo the submitted grouping so existing results and exports never follow an edited checkbox.
+    includeSub2: request.includeSub2,
+    grouping: { combo: getGroupFields(request.includeSub2), category: getGroupFields(request.includeSub2) },
   };
 }
 

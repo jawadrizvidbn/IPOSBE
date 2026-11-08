@@ -1,10 +1,10 @@
 /** Pure request/query helpers. No database access or startup side effects. */
+const { buildClassifiedLinesQuery } = require("./groupClassification");
+
+// Leaf buckets are disjoint; Retail, Wholesale and Total are reconciliation subtotals.
 const METRICS = [
-  "retail",
-  "wholesaleTier1",
-  "wholesaleTier2",
-  "wholesaleTier3",
-  "total",
+  "regularRetail", "combo3", "combo6", "combo9", "unmatchedRetail", "retail",
+  "wholesaleTier1", "wholesaleTier2", "wholesaleTier3", "unmatchedWholesale", "wholesale", "total",
 ];
 
 // Attach the intended HTTP status to a validation error.
@@ -36,6 +36,13 @@ function parseRequest(query, user) {
   const start = parseDate(query.startDate);
   const end = parseDate(query.endDate);
   if (start > end) throw invalid("Start date must be on or before end date.");
+
+  // Parse the checkbox strictly: the string "false" must never enable Sub2.
+  const rawSub2 = query.includeSub2;
+  if (rawSub2 !== undefined && ![true, false, "true", "false"].includes(rawSub2)) {
+    throw invalid("includeSub2 must be true or false.");
+  }
+  const includeSub2 = rawSub2 === true || rawSub2 === "true";
 
   // Normalize and deduplicate store names supplied in the URL.
   const requested = [
@@ -83,6 +90,7 @@ function parseRequest(query, user) {
   return {
     shops,
     months,
+    includeSub2,
     start: query.startDate,
     endExclusive: end.toISOString().slice(0, 10),
   };
@@ -98,43 +106,24 @@ function emptyMetrics() {
   );
 }
 
-/** Each monthly query classifies BEFORE aggregation; never group across branches/months. */
-function buildMonthlyQuery(table) {
-  // Permit only generated monthly transaction table names as SQL identifiers.
-  if (!/^\d{6}tbldata_current_tran$/.test(table))
-    throw invalid("Invalid monthly table name.");
-  // A line is marked only when both marker fields contain nonblank text.
-  const marked = (alias) =>
-    `TRIM(COALESCE(${alias}.CehqueNum, '')) <> '' AND TRIM(COALESCE(${alias}.Cardnum, '')) <> ''`;
-  // Build a quantity/value pair for each tier and the combined total.
-  const aggregates = METRICS.flatMap((metric, tier) => {
-    const condition = metric === "total" ? "1 = 1" : `x.Tier = ${tier}`;
-    return [
-      `SUM(CASE WHEN ${condition} THEN x.Quantity ELSE 0 END) AS ${metric}Qty`,
-      `SUM(CASE WHEN ${condition} THEN x.SalesValue ELSE 0 END) AS ${metric}Value`,
-    ];
-  });
-  // Join marked sale/category totals, classify each line, then aggregate by product.
-  return `SELECT x.stockcode, MAX(x.stockdescription) AS stockdescription, ${aggregates.join(
-    ",\n",
-  )}
-    FROM (
-      SELECT t.stockcode, t.stockdescription, COALESCE(t.qty, 0) AS Quantity,
-        COALESCE(t.linetotal, 0) AS SalesValue,
-        CASE WHEN ${marked("t")} THEN
-          CASE WHEN COALESCE(g.GroupQty, 0) >= 1000 THEN 3
-               WHEN COALESCE(g.GroupQty, 0) >= 100 THEN 2
-               WHEN COALESCE(g.GroupQty, 0) >= 10 THEN 1 ELSE 0 END
-          ELSE 0 END AS Tier
-      FROM \`${table}\` t
-      LEFT JOIN (
-        SELECT salenum, majorno, sub1no, SUM(COALESCE(qty, 0)) AS GroupQty
-        FROM \`${table}\` m
-        WHERE datetime >= :start AND datetime < :endExclusive AND ${marked("m")}
-        GROUP BY salenum, majorno, sub1no
-      ) g ON g.salenum = t.salenum AND g.majorno <=> t.majorno AND g.sub1no <=> t.sub1no
-      WHERE t.datetime >= :start AND t.datetime < :endExclusive
-    ) x GROUP BY x.stockcode ORDER BY x.stockcode`;
+/** Classify original product lines using sale/category group sums, then pivot their own values. */
+function buildMonthlyQuery(table, includeSub2 = false) {
+  // Build disjoint leaf conditions and inclusive subtotals from the same classified lines.
+  const conditions = Object.fromEntries(METRICS.map(metric => [metric, `x.Bucket = '${metric}'`]));
+  conditions.retail = "x.Bucket IN ('regularRetail','combo3','combo6','combo9','unmatchedRetail')";
+  conditions.wholesale = "x.Bucket IN ('wholesaleTier1','wholesaleTier2','wholesaleTier3','unmatchedWholesale')";
+  conditions.total = "1 = 1";
+  const aggregates = METRICS.flatMap(metric => [
+    `SUM(CASE WHEN ${conditions[metric]} THEN x.Quantity ELSE 0 END) AS ${metric}Qty`,
+    `SUM(CASE WHEN ${conditions[metric]} THEN x.SalesValue ELSE 0 END) AS ${metric}Value`,
+  ]);
+
+  // Count unmatched lines separately so cancelling refunds do not hide a validation warning.
+  return `SELECT x.stockcode, MAX(x.stockdescription) AS stockdescription,
+    ${aggregates.join(",\n")},
+    SUM(CASE WHEN x.Bucket IN ('unmatchedRetail','unmatchedWholesale') THEN 1 ELSE 0 END) AS unmatchedLineCount
+    FROM (${buildClassifiedLinesQuery(table, includeSub2)}) x
+    GROUP BY x.stockcode ORDER BY x.stockcode`;
 }
 
 // Accumulate signed quantities and values without dropping numeric zeroes.

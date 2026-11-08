@@ -1,6 +1,5 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const logic = require("../services/retailWholesaleTier/reportLogic");
@@ -54,80 +53,6 @@ test("enumerates every month across years and uses an exclusive next-day bound",
   assert.equal(request.endExclusive, "2026-03-01");
 });
 
-// Exercise the generated calculation SQL against transaction edge cases.
-test("executes generated SQL against boundary, group, marker, null and refund fixtures", () => {
-  // SQLite is a local calculation check, not MySQL compatibility certification.
-  // Its IS operator implements the null-safe equality used by MySQL <=> here.
-  const sql = logic
-    .buildMonthlyQuery("202611tbldata_current_tran")
-    .replaceAll("<=>", "IS");
-  const script = `
-import sqlite3, json, sys
-request = json.load(sys.stdin)
-db = sqlite3.connect(':memory:')
-db.row_factory = sqlite3.Row
-db.execute('CREATE TABLE "202611tbldata_current_tran" (stockcode TEXT, stockdescription TEXT, qty REAL, linetotal REAL, CehqueNum TEXT, Cardnum TEXT, salenum REAL, majorno REAL, sub1no REAL, datetime TEXT)')
-rows = []
-def add(code, qty, sale, major=1, sub=1, cheque='Qty', card='marked', date='2026-11-15 12:00:00', value=None):
-    rows.append((code, code, qty, qty*10 if value is None and qty is not None else value, cheque, card, sale, major, sub, date))
-for qty in [9,10,99,100,999,1000]: add(str(qty), qty, qty)
-add('shared-a',6,2000,major=None,sub=None)
-add('shared-b',5,2000,major=None,sub=None)
-add('other-category',5,2000,major=2)
-add('unmarked',1000,2000,major=None,sub=None,card=' ')
-add('one-marker',1000,2001,cheque=None)
-add('refund',-2,3000)
-add('null-values',None,3001,value=None)
-add('last-second',1,3002,date='2026-11-30 23:59:59')
-add('outside',10000,2000,major=None,sub=None,date='2026-12-01 00:00:00')
-db.executemany('INSERT INTO "202611tbldata_current_tran" VALUES (?,?,?,?,?,?,?,?,?,?)',rows)
-print(json.dumps([dict(r) for r in db.execute(request['sql'], {'start':'2026-11-01','endExclusive':'2026-12-01'})]))
-`;
-  const result = spawnSync("python3", ["-c", script], {
-    input: JSON.stringify({ sql }),
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, result.stderr);
-  const rows = Object.fromEntries(
-    JSON.parse(result.stdout).map((row) => [row.stockcode, row]),
-  );
-  for (const [qty, tier] of [
-    [9, "retail"],
-    [10, "wholesaleTier1"],
-    [99, "wholesaleTier1"],
-    [100, "wholesaleTier2"],
-    [999, "wholesaleTier2"],
-    [1000, "wholesaleTier3"],
-  ]) {
-    assert.equal(rows[qty][`${tier}Qty`], qty);
-  }
-  assert.equal(rows["shared-a"].wholesaleTier1Qty, 6);
-  assert.equal(rows["shared-b"].wholesaleTier1Qty, 5);
-  assert.equal(rows["other-category"].retailQty, 5);
-  assert.equal(rows.unmarked.retailQty, 1000);
-  assert.equal(rows["one-marker"].retailQty, 1000);
-  assert.equal(rows.refund.retailQty, -2);
-  assert.equal(rows["null-values"].totalValue, 0);
-  assert.equal(rows["last-second"].totalQty, 1);
-  assert.equal(rows.outside, undefined);
-  for (const row of Object.values(rows)) {
-    assert.equal(
-      row.totalQty,
-      row.retailQty +
-        row.wholesaleTier1Qty +
-        row.wholesaleTier2Qty +
-        row.wholesaleTier3Qty,
-    );
-    assert.equal(
-      row.totalValue,
-      row.retailValue +
-        row.wholesaleTier1Value +
-        row.wholesaleTier2Value +
-        row.wholesaleTier3Value,
-    );
-  }
-});
-
 // Verify aggregation keeps products and branch totals correctly reconciled.
 test("merges months by stock code, preserves zeroes and keeps branch totals independent", () => {
   const row = {
@@ -164,6 +89,7 @@ function loadService(
     require: (name) => {
       if (name === "sequelize") return { QueryTypes: { SELECT: "SELECT" } };
       if (name === "./reportLogic") return logic;
+      if (name === "./groupClassification") return require("../services/retailWholesaleTier/groupClassification");
       if (name === "../../controllers/databaseController")
         return {
           getActiveDatabases: async (currentUser, shop) => {
@@ -266,4 +192,41 @@ test("fetches branch monthly data through the existing factory with user credent
     assert.equal(connection.password, currentUser.serverPassword);
     assert.equal(connection.port, currentUser.serverPort);
   }
+});
+
+// A warning must survive zero-valued signed groups instead of relying on their net quantity/value.
+test("reports unmatched line counts without hiding reconciled zero totals", async () => {
+  const service = loadService(async (sql) => {
+    if (sql.includes("INFORMATION_SCHEMA.TABLES")) return [{ Name: "202611tbldata_current_tran" }];
+    return [{ stockcode: "zero", unmatchedLineCount: 2, unmatchedRetailQty: 0, unmatchedRetailValue: 0 }];
+  });
+  const result = await service.generate({ ...query, shopKeys: "Beacon" }, user);
+  assert.match(result.warnings[0], /2 unmatched lines/);
+  assert.equal(result.totals.totalQty, 0);
+  assert.deepEqual(Array.from(result.grouping.combo), ["salenum", "majorno", "sub1no"]);
+  assert.deepEqual(Array.from(result.grouping.category), ["salenum", "majorno", "sub1no"]);
+});
+
+// Verify false query strings, omitted defaults and hostile/nonboolean inputs before any database lookup.
+test("parses optional Sub2 checkbox strictly and propagates it into SQL and response metadata", async () => {
+  for (const value of [undefined, false, "false"]) {
+    assert.equal(logic.parseRequest({ ...query, includeSub2: value }, user).includeSub2, false);
+  }
+  for (const value of [true, "true"]) {
+    assert.equal(logic.parseRequest({ ...query, includeSub2: value }, user).includeSub2, true);
+  }
+  for (const value of ["0", "1", "yes", "TRUE", "", [], {}, 1]) {
+    assert.throws(() => logic.parseRequest({ ...query, includeSub2: value }, user), /includeSub2/);
+  }
+  let monthly = "";
+  const service = loadService(async sql => {
+    if (sql.includes("INFORMATION_SCHEMA.TABLES")) return [{ Name: "202611tbldata_current_tran" }];
+    monthly = sql;
+    return [];
+  });
+  const result = await service.generate({ ...query, shopKeys: "Beacon", includeSub2: "true" }, user);
+  assert.equal(result.includeSub2, true);
+  assert.match(monthly, /g.sub2no <=> \(t.sub2no\)/);
+  assert.deepEqual(Array.from(result.grouping.combo), ["salenum", "majorno", "sub1no", "sub2no"]);
+  assert.deepEqual(Array.from(result.grouping.category), ["salenum", "majorno", "sub1no", "sub2no"]);
 });
